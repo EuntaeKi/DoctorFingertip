@@ -43,7 +43,7 @@ void loop()
   while(Serial1.available()<2)
   {
     // just wait
-    }
+  }
   byte recv1 = Serial1.read();
   byte recv2 = Serial1.read();
   Serial.print("Received :");

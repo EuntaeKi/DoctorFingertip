@@ -36,11 +36,12 @@ void loop()
     // just wait
     }
   byte inbyte1 = Serial.read();
-   byte inbyte2 = Serial.read();
+  byte inbyte2 = Serial.read();
 
   //  write the data back
   Serial.write(inbyte2+inbyte1);
-  Serial.write(inbyte2-inbyte1);
+  Serial.write(inbyte2-2);
+  Serial.write((byte)Serial.available());
 
 }
 
