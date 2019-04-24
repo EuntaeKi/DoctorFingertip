@@ -16,12 +16,15 @@ Implement:   All the modules that should be in UNO
 
 (*&()*#&$()*#&$(*&()*#&$()#*&$^#^#*&^*N C(*#&(* # &#)(&#)%(&#{)(*&#(*$&#(* #HIUWHDKJHCI@U$Y@(*@ V) @)*&$@)(&$)@*$&@(*$&@)($&@($&@()*$@)($^@)&($*/
 
+// Global Variables for Function Call Counter
 int tempCount;
 int systCount;
 int diastCount;
 int pulseCount;
 bool systolicFlag;
+bool diastolicFlag;
 
+// Initialize all the values needed for measure()
 void setup()
 {
   // running on the uno - connect to tx1 and rx1 on the mega and to rx and tx on the uno
@@ -32,101 +35,229 @@ void setup()
   diastCount = 0;
   pulseCount = 0;
   systolicFlag = false;
+  diastolicFlag = false;
+  //struct ComputeData cd;
 }
 
 
 void loop()
 {
-  //  read incoming byte from the mega
   while(Serial.available()<2)
   {
-    // just wait
+    // just wait 
   }
-  byte inbyte1 = Serial.read();
-  byte inbyte2 = Serial.read();
-  switch(){
-    
-  }
-  //  write the data back
-  Serial.write(inbyte2+inbyte1);
+  byte task = Serial.read();
+  byte subtask = Serial.read();
+  taskDispatcher(task, subtask);
 }
 
-void temperature(struct* md)
+ 
+
+void taskDispatcher(byte task,  byte subtask){
+  // Measure = 1
+  // Compute = 2
+  // Alarm   = 3
+  // Status  = 4 
+  unsigned int dataIntType;
+  unsigned short dataShortType; 
+  switch(task) {  
+    case 1:                                             // Case 1: Measure the data
+      Serial.readBytes((char*)&dataIntType, sizeof(unsigned int));
+      switch(subtask){ 
+        case 1:                                         // Case 1: temperatureRaw
+          Serial.write(temperature(dataIntType));
+          break;
+        case 2:                                         // Case 2: systolicPressRaw    
+          Serial.write(systolicPress(dataIntType)); 
+          break;    
+        case 3:                                         // Case 3: diastolicCaseRaw
+          Serial.write(diastolicPress(dataIntType)); 
+          break;  
+        case 4:                                         // Case 4: pulseRateRaw
+          Serial.write(pulseRate(dataIntType)); 
+          break; 
+      }
+      break; 
+    case 2:                                             // Case 2: Compute the data
+      Serial.readBytes((char*)&dataIntType, sizeof(unsigned int));
+      switch(subtask){                                  // Case 1: tempCorrected
+        case 1:  
+          Serial.write(tempCorrected(dataIntType)); 
+          break;
+        case 2:                                         // Case 2: sysCorrected 
+          Serial.write(sysCorrected(dataIntType)); 
+          break; 
+        case 3:                                         // Case 3: diasCorrected
+          Serial.write(diasCorrected(dataIntType)); 
+          break; 
+        case 4:                                         // Case 4: prCorrected
+          Serial.write(prCorrected(dataIntType)); 
+          break; 
+      }
+        break;
+    case 3:                                             // Case 3: Alarm if out of range
+      Serial.readBytes((char*)&dataIntType, sizeof(unsigned int));
+        switch(subtask){                                // Case 1: tempAlarm
+          case 1:  
+            Serial.write(tempRange(dataIntType)); 
+            break;
+          case 2:                                       // Case 2: sysAlarm                 
+            Serial.write(sysRange(dataIntType));
+            break; 
+          case 3:                                       // Case 3: diasAlarm
+            Serial.write(diasRange(dataIntType));
+            break; 
+          case 4:                                       // Case 4: prAlarm
+            Serial.write(prRange(dataIntType));
+            break; 
+        }
+        break; 
+
+        // Case 4: Status of battery
+        case 4: 
+          Serial.readBytes((char*)&dataShortType, sizeof(unsigned short));
+          Serial.write(statusCheck(dataShortType)); 
+          break;
+  }
+}
+
+unsigned int temperature(unsigned int data)
 {
   bool flag = true;
-  if(md.temperatureRaw < 50 && flag) {
-    if(md.temperatureRaw > 50) {
+  if(data < 50 && flag) {
+    if(data > 50) {
       flag = false;
     }
     if(tempCount % 2 == 0) {
-      md.temperatureRaw += 2;
+      data += 2;
     } else {
-      md.temperatureRaw--;
+      data--;
     }
-  } else if (md.temperatureRaw > 15 && !flag){
-    if(md.temperatureRaw < 15) {
+  } else if (data > 15 && !flag){
+    if(data < 15) {
       flag = true;
     }
     if(tempCount % 2 == 0) {
-      md.temperatureRaw--;
+      data--;
     } else {
-      md.temperatureRaw += 2;
+      data += 2;
     }
   }
+  tempCount++;
+  return data; 
 }
 
-void systolicPress(struct* md) {
-  if(md.systolicPressRaw < 100) {
+unsigned int systolicPress(unsigned int data) {
+  //if (systolicFlag == false || dia  
+  if(data < 100) {
     systolicFlag = false;
     if(systCount % 2 == 0) {
-      md.systolicPressRaw += 3;
+      data += 3;
     } else {
-      md.systolicPressRaw--;
+      data--;
     }
   } else {
     systolicFlag = true;
   }
+  systCount++;
+  return data;
 }
 
-void diastolicPress(struct* md) {
-  if(md.diastsolicPressRaw < 100) {
+unsigned int diastolicPress(unsigned int data) {
+  //if (diastolicFlag == false || sys 
+  if(data < 100) {
     diastolicFlag = false;
     if(diastCount % 2 == 0) {
-      md.diastolicPressRaw += 3;
+      data += 3;
     } else {
-      md.diastolicPressRaw--;
+      data--;
     }
   } else {
     diastolicFlag = true;
   }
+  diastCount++;
+  return data;
 }
 
-void pulseRate(struct* md)
+unsigned int pulseRate(unsigned int data)
 {
   bool flag = true;
-  if(md.pulseRateRaw <= 40 && flag) {
-    if(md.temperatureRaw > 40) {
+  if(data <= 40 && flag) {
+    if(data > 40) {
       flag = false;
     }
     if(tempCount % 2 == 0) {
-      md.temperatureRaw--;
+      data--;
     } else {
-      md.temperatureRaw += 3;
+      data += 3;
     }
-  } else if (md.temperatureRaw > 15 && !flag){
-    if(md.temperatureRaw < 15) {
+  } else if (data > 15 && !flag){
+    if(data < 15) {
       flag = true;
     }
     if(tempCount % 2 == 0) {
-      md.temperatureRaw += 3;
+      data += 3;
     } else {
-      md.temperatureRaw--;
+      data--;
     }
   }
+  return data;
 }
 
-void compute(struct* md) {
-  
+unsigned int tempCorrected(unsigned int data) {
+  unsigned int dataCorrected = 5 + (0.75 * data);
+  return data;
+}
+
+unsigned int sysCorrected(unsigned int data) {
+  unsigned int dataCorrected = 9 + (2 * data);
+  return data;
+}
+
+unsigned int diasCorrected(unsigned int data) {
+  unsigned int dataCorrected = 6 + (1.5 * data);
+  return data;
+}
+
+unsigned int prCorrected(unsigned int data) {
+  unsigned int dataCorrected = 8 + (3 * data);
+  return data;
+}
+
+char tempRange(unsigned int data) {                 // Alarm off "0" if in range 
+  char result = 1; 
+  if (data >= 36.1 && data <= 37.8) { 
+    result = 0; 
+  }
+  return result; 
+} 
+
+char sysRange(unsigned int data) {                  // Alarm off "0" if in range
+  char result = 1; 
+  if (data == 120) { 
+    result = 0; 
+  } 
+  return result; 
+} 
+
+char diasRange(unsigned int data) {                 // Alarm off "0" if in range
+  char result = 1; 
+  if (data == 80) { 
+    result = 0; 
+  } 
+  return result; 
+} 
+
+char prRange(unsigned int data) { 
+  char result = 1; 
+  if (data >= 60 && data <= 100) { 
+    result = 0; 
+  }
+  return result; 
+} 
+
+unsigned short statusCheck(unsigned short data) { 
+  return data--; 
 }
 
 //  end EE 474 code
