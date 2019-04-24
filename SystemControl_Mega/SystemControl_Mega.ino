@@ -502,7 +502,7 @@ void displayTask(void* data){
    // Show the Temprature
    tft.print("   Diastolic: ");
    tft.print((char*)*(displayData->diasCorrected));
-   tft.println(" mm Hg");
+   tft.println(" mm Hg\n");
    // Display Pulse
    // Figure out the color
    if ((*(bindedData->pulseOutOfRange) == 1) || (*(bindedData->pulseLow) == TRUE)){
