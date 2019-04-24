@@ -15,14 +15,28 @@ Implement:   All the modules that should be in UNO
                                  
 
 (*&()*#&$()*#&$(*&()*#&$()#*&$^#^#*&^*N C(*#&(* # &#)(&#)%(&#{)(*&#(*$&#(* #HIUWHDKJHCI@U$Y@(*@ V) @)*&$@)(&$)@*$&@(*$&@)($&@($&@()*$@)($^@)&($*/
+#define BASE_TEN_BASE 10
+
+
+
+
+
+// REMEMBER TO PUT FUNCTION DEF HERE ACCORDING TO CODE STANDARD
+void writeBack(char* data, char count);
+
 
 // Global Variables for Function Call Counter
 int tempCount;
+int tempFlag;
+int tempMultiplier;
 int systCount;
 int diastCount;
 int pulseCount;
+int pulseFlag;
+int pulseMultiplier;
 bool systolicFlag;
 bool diastolicFlag;
+
 
 // Initialize all the values needed for measure()
 void setup()
@@ -36,6 +50,10 @@ void setup()
   pulseCount = 0;
   systolicFlag = false;
   diastolicFlag = false;
+  tempMultiplier = -1;
+  pulseMultiplier = -1;
+  tempFlag = 0;
+  pulseFlag = 0;
   //struct ComputeData cd;
 }
 
@@ -57,93 +75,118 @@ void taskDispatcher(byte task,  byte subtask){
   // Measure = 1
   // Compute = 2
   // Alarm   = 3
-  // Status  = 4 
+  // Status  = 4
+   
   unsigned int dataIntType;
-  unsigned short dataShortType; 
+  unsigned short dataShortType;
+  unsigned int returnIntDump;
+  double returnDoubleDump;
+  unsigned short returnShortDump;
+  char returnCharDump; 
   switch(task) {  
     case 1:                                             // Case 1: Measure the data
       Serial.readBytes((char*)&dataIntType, sizeof(unsigned int));
       switch(subtask){ 
         case 1:                                         // Case 1: temperatureRaw
-          Serial.write(temperature(dataIntType));
+          returnIntDump = temperature(dataIntType);
           break;
         case 2:                                         // Case 2: systolicPressRaw    
-          Serial.write(systolicPress(dataIntType)); 
+          returnIntDump = systolicPress(dataIntType);
           break;    
         case 3:                                         // Case 3: diastolicCaseRaw
-          Serial.write(diastolicPress(dataIntType)); 
+          returnIntDump = diastolicPress(dataIntType);
           break;  
         case 4:                                         // Case 4: pulseRateRaw
-          Serial.write(pulseRate(dataIntType)); 
+          returnIntDump = pulseRate(dataIntType);
           break; 
       }
+      writeBack((char*)&returnIntDump, sizeof(unsigned int));
       break; 
     case 2:                                             // Case 2: Compute the data
       Serial.readBytes((char*)&dataIntType, sizeof(unsigned int));
       switch(subtask){                                  // Case 1: tempCorrected
         case 1:  
-          Serial.write(tempCorrected(dataIntType)); 
+          returnDoubleDump = tempCorrected(dataIntType);
+          writeBack((char*)&returnDoubleDump, sizeof(double));
           break;
         case 2:                                         // Case 2: sysCorrected 
-          Serial.write(sysCorrected(dataIntType)); 
+          returnIntDump = sysCorrected(dataIntType); 
+          writeBack((char*)&returnIntDump, sizeof(unsigned int));
           break; 
         case 3:                                         // Case 3: diasCorrected
-          Serial.write(diasCorrected(dataIntType)); 
+          returnDoubleDump = diasCorrected(dataIntType); 
+          writeBack((char*)&returnDoubleDump, sizeof(double)); 
           break; 
         case 4:                                         // Case 4: prCorrected
-          Serial.write(prCorrected(dataIntType)); 
+          returnIntDump = prCorrected(dataIntType); 
+          writeBack((char*)&returnIntDump, sizeof(unsigned int));
           break; 
       }
-        break;
+      break;
     case 3:                                             // Case 3: Alarm if out of range
       Serial.readBytes((char*)&dataIntType, sizeof(unsigned int));
         switch(subtask){                                // Case 1: tempAlarm
           case 1:  
-            Serial.write(tempRange(dataIntType)); 
+            returnCharDump = tempRange(dataIntType);
             break;
           case 2:                                       // Case 2: sysAlarm                 
-            Serial.write(sysRange(dataIntType));
+            returnCharDump = sysRange(dataIntType);
             break; 
           case 3:                                       // Case 3: diasAlarm
-            Serial.write(diasRange(dataIntType));
+            returnCharDump = diasRange(dataIntType);
             break; 
           case 4:                                       // Case 4: prAlarm
-            Serial.write(prRange(dataIntType));
+            returnCharDump = prRange(dataIntType);
             break; 
         }
+        writeBack(&returnCharDump, sizeof(char)); 
         break; 
-
-        // Case 4: Status of battery
-        case 4: 
+    case 4:                                             // Case 3: Warm if high
+      Serial.readBytes((char*)&dataIntType, sizeof(unsigned int));
+        switch(subtask){                                // Case 1: tempAlarm
+          case 1:  
+            returnCharDump = tempHigh(dataIntType);
+            break;
+          case 2:                                       // Case 2: sysAlarm                 
+            returnCharDump = sysHigh(dataIntType);
+            break; 
+          case 3:                                       // Case 3: diasAlarm
+            returnCharDump = diasHigh(dataIntType);
+            break; 
+          case 4:                                       // Case 4: prAlarm
+            returnCharDump = prHigh(dataIntType);
+            break; 
+        }
+        writeBack(&returnCharDump, sizeof(char)); 
+        break;  
+     // Case 5: Status of battery
+     case 5: 
           Serial.readBytes((char*)&dataShortType, sizeof(unsigned short));
-          Serial.write(statusCheck(dataShortType)); 
+          returnShortDump = statusCheck(dataShortType);
+          writeBack((char*)&returnShortDump, sizeof(short)); 
           break;
   }
 }
 
 unsigned int temperature(unsigned int data)
 {
-  bool flag = true;
-  if(data < 50 && flag) {
-    if(data > 50) {
-      flag = false;
-    }
-    if(tempCount % 2 == 0) {
-      data += 2;
-    } else {
-      data--;
-    }
-  } else if (data > 15 && !flag){
-    if(data < 15) {
-      flag = true;
-    }
-    if(tempCount % 2 == 0) {
-      data--;
-    } else {
-      data += 2;
-    }
+  // What should happen when it is over 50. it should start ticking down right?
+
+  // start with going up. Hit 50->reverse Hit15->reverse
+  if ((data>50 || data<15) && tempFlag == 1){ // reverse
+    tempMultiplier = -tempMultiplier;
+    tempFlag = 0;
+  }
+  if ( data < 50 && data > 15){
+    tempFlag = 1;
+  }
+  if (tempCount % 2 == 0){
+    data += 2*tempMultiplier;
+  }else{
+    data -= 1*tempMultiplier;
   }
   tempCount++;
+  tempCount=tempCount % BASE_TEN_BASE;  // prevent overflow, but not very necessary
   return data; 
 }
 
@@ -165,12 +208,12 @@ unsigned int systolicPress(unsigned int data) {
 
 unsigned int diastolicPress(unsigned int data) {
   //if (diastolicFlag == false || sys 
-  if(data < 100) {
+  if(data >40) {
     diastolicFlag = false;
     if(diastCount % 2 == 0) {
-      data += 3;
+      data -= 2;
     } else {
-      data--;
+      data++;
     }
   } else {
     diastolicFlag = true;
@@ -181,68 +224,65 @@ unsigned int diastolicPress(unsigned int data) {
 
 unsigned int pulseRate(unsigned int data)
 {
-  bool flag = true;
-  if(data <= 40 && flag) {
-    if(data > 40) {
-      flag = false;
-    }
-    if(tempCount % 2 == 0) {
-      data--;
-    } else {
-      data += 3;
-    }
-  } else if (data > 15 && !flag){
-    if(data < 15) {
-      flag = true;
-    }
-    if(tempCount % 2 == 0) {
-      data += 3;
-    } else {
-      data--;
-    }
+  if ((data>40 || data<15) && pulseFlag == 1){ // reverse
+    pulseMultiplier = -pulseMultiplier;
+    pulseFlag = 0;
   }
-  return data;
+  if (data<40 && data>15){
+    pulseFlag = 1;
+  }
+  if (pulseCount % 2 == 0){
+    data -= 1*pulseMultiplier;
+  }else{
+    data += 3*pulseMultiplier;
+  }
+  pulseCount++;
+  pulseCount=pulseCount % BASE_TEN_BASE;  // prevent overflow, but not very necessary
+  return data; 
 }
 
-unsigned int tempCorrected(unsigned int data) {
-  unsigned int dataCorrected = 5 + (0.75 * data);
-  return data;
+double tempCorrected( unsigned int data) {
+  double dataCorrected = 5 + (0.75 * data);
+  return dataCorrected;
 }
 
 unsigned int sysCorrected(unsigned int data) {
   unsigned int dataCorrected = 9 + (2 * data);
-  return data;
+  return dataCorrected;
 }
 
-unsigned int diasCorrected(unsigned int data) {
-  unsigned int dataCorrected = 6 + (1.5 * data);
-  return data;
+double diasCorrected( unsigned int data) {
+  double dataCorrected = 6 + (1.5 * data);
+  return dataCorrected;
 }
 
 unsigned int prCorrected(unsigned int data) {
   unsigned int dataCorrected = 8 + (3 * data);
-  return data;
+  return dataCorrected;
 }
 
 char tempRange(unsigned int data) {                 // Alarm off "0" if in range 
   char result = 1; 
-  if (data >= 36.1 && data <= 37.8) { 
+  double dataCorrected = 5 + (0.75 * data);
+  if (dataCorrected >= 36.1 && dataCorrected <= 37.8) { 
     result = 0; 
   }
   return result; 
 } 
 
 char sysRange(unsigned int data) {                  // Alarm off "0" if in range
-  char result = 1; 
-  if (data == 120) { 
+  char result = 1;
+  unsigned int dataCorrected = 9 + (2 * data); 
+  if (dataCorrected <= 120) { 
     result = 0; 
   } 
   return result; 
 } 
 
 char diasRange(unsigned int data) {                 // Alarm off "0" if in range
-  char result = 1; 
-  if (data == 80) { 
+  char result = 1;
+  double dataCorrected = 6 + (1.5 * data); 
+  if (dataCorrected <= 80) { 
     result = 0; 
   } 
   return result; 
@@ -250,14 +290,60 @@ char diasRange(unsigned int data) {                 // Alarm off "0" if in range
 
 char prRange(unsigned int data) { 
   char result = 1; 
-  if (data >= 60 && data <= 100) { 
+  unsigned int dataCorrected = 8 + (3 * data);
+  if (dataCorrected >= 60 && dataCorrected <= 100) { 
+    result = 0; 
+  }
+  return result; 
+} 
+
+char tempHigh(unsigned int data) {                 // Alarm off "0" if in range 
+  char result = 1; 
+  double dataCorrected = 5 + (0.75 * data);
+  if (dataCorrected <= 37.8) { 
+    result = 0; 
+  }
+  return result; 
+} 
+
+char sysHigh(unsigned int data) {                  // Alarm off "0" if in range
+  char result = 1;
+  unsigned int dataCorrected = 9 + (2 * data); 
+  if (dataCorrected <= 120) { 
+    result = 0; 
+  } 
+  return result; 
+} 
+
+char diasHigh(unsigned int data) {                 // Alarm off "0" if in range
+  char result = 1;
+  double dataCorrected = 6 + (1.5 * data); 
+  if (dataCorrected <= 80) { 
+    result = 0; 
+  } 
+  return result; 
+} 
+
+char prHigh(unsigned int data) { 
+  char result = 1; 
+  unsigned int dataCorrected = 8 + (3 * data);
+  if (dataCorrected <= 100) { 
     result = 0; 
   }
   return result; 
 } 
 
 unsigned short statusCheck(unsigned short data) { 
-  return data--; 
+  return --data; 
 }
+
+void writeBack(char* data, char count){
+    for (char i = 0; i<count; i++){
+      Serial.write(data[i]);
+    }
+}
+
+
+
 
 //  end EE 474 code

@@ -4,15 +4,14 @@
 #include <Elegoo_TFTLCD.h> // Hardware-specific library
 
 
-
+#define SUSPENSION 1500
 #define TASK_TOTAL_COUNT 6
-#define WILDCARD 0
-#define MAX_STR_BUF_LEN 10
+#define MAX_STR_BUF_LEN 20
 #define BATTERY_LIMIT 40
 #define MEASURE_TASK 1
 #define COMPUTE_TASK 2
-#define WARN_TASK 3
-#define ALARM_TASK 4
+#define ALARM_TASK 3
+#define WARN_TASK 4
 #define STATUS_TASK 5
 #define TEMP_RAW_SUBTASK 1
 #define SYSTO_RAW_SUBTASK 2
@@ -246,7 +245,8 @@ void initialize(){
    tft.setRotation(1);
    //unsigned long start = micros();
    tft.setCursor(0, 0);
-   tft.setTextColor(GREEN); tft.setTextSize(3);
+   tft.setTextColor(GREEN); 
+   tft.setTextSize(2);
    // Prepare for each task Each Tasks
    // 1. Measure
    // data:
@@ -319,8 +319,8 @@ void initialize(){
    allTasks[0] = &measureTaskControlBlock;
    allTasks[1] = &computeTaskControlBlock;
    allTasks[2] = &warnAndAlarmTaskControlBlock;
-   allTasks[3] = &displayTaskControlBlock;
-   allTasks[4] = &statusTaskControlBlock;
+   allTasks[3] = &statusTaskControlBlock;
+   allTasks[4] = &displayTaskControlBlock;
    allTasks[5] = NULL;
    SchedulerData schedulerData;
    schedulerData.tasks = allTasks;
@@ -356,6 +356,7 @@ void scheduleTask(void* data){
     if (nextTask != NULL){
       executeTCB(nextTask);
     }
+    counter++;
    }
    return;
 }
@@ -371,20 +372,28 @@ void scheduleTask(void* data){
 void measureTask(void* data){
    // check the timer to see if it is time to go
    static unsigned long timer = 0;
-   if (timer>0 && ((millis()-timer)<5000)){
+   if (timer!=0 && (millis()-timer)<SUSPENSION){
      return;
    }
+   Serial.print("Measureing----");
    timer = millis();
    // get the data struct
    MeasureData* measureData = (MeasureData*)data;
    // get the raw temperature
    requestAndReceive((char*)(measureData->tempRawPtr),sizeof(unsigned int), (char*)(measureData->tempRawPtr),sizeof(unsigned int), MEASURE_TASK , TEMP_RAW_SUBTASK );
+      Serial.print("  1 = ");
+      Serial.print(*(measureData->tempRawPtr));
    // get the raw systo
    requestAndReceive((char*)(measureData->systoRawPtr), sizeof(unsigned int), (char*)(measureData->systoRawPtr), sizeof(unsigned int), MEASURE_TASK , SYSTO_RAW_SUBTASK);
+   Serial.print("  2----");
+
    // get the raw diasto
    requestAndReceive((char*)(measureData->diastoRawPtr) , sizeof(unsigned int),(char*)(measureData->diastoRawPtr) , sizeof(unsigned int), MEASURE_TASK , DIASTO_RAW_SUBTASK);
-   // get the raw diasto
+
+      Serial.print("3----");
+// get the raw diasto
    requestAndReceive((char*)(measureData->pulseRawPtr) , sizeof(unsigned int),(char*)(measureData->pulseRawPtr) , sizeof(unsigned int), MEASURE_TASK , PULSE_RAW_SUBTASK );
+   Serial.println("Finished");
    return;
 }
 
@@ -400,10 +409,11 @@ void measureTask(void* data){
 void computeTask(void* data){
    // check the timer to see if it is time to go
    static unsigned long timer = 0;
-   if (timer>0 && ((millis()-timer)<5000)){
+   if (timer!=0 && (millis()-timer)<SUSPENSION){
      return;
    }
    timer = millis();
+   Serial.print("Computing---");
    ComputeData* computeData = (ComputeData*) data;
    // give the corrected data somewhere to store its string
    static unsigned char tempCorrectedDataBuf[MAX_STR_BUF_LEN];
@@ -424,13 +434,21 @@ void computeTask(void* data){
    }
    // Get the data from UNO
    // temperature measure
-   requestAndReceive((char*)(computeData->tempRawPtr),sizeof(unsigned int), (char*)*(computeData->tempCorrected),WILDCARD, COMPUTE_TASK , TEMP_RAW_SUBTASK );
+   double tempCorrDump;
+   requestAndReceive((char*)(computeData->tempRawPtr),sizeof(unsigned int), (char*)&tempCorrDump,sizeof(double), COMPUTE_TASK , TEMP_RAW_SUBTASK );
+   dtostrf(tempCorrDump, 1, 2, (char*)tempCorrectedDataBuf);
    // systo measure
-   requestAndReceive((char*)(computeData->systoRawPtr),sizeof(unsigned int), (char*)*(computeData->sysPressCorrected),WILDCARD, COMPUTE_TASK , SYSTO_RAW_SUBTASK );
+   unsigned int systoCorrDump;
+   requestAndReceive((char*)(computeData->systoRawPtr),sizeof(unsigned int), (char*)&systoCorrDump,sizeof(unsigned int), COMPUTE_TASK , SYSTO_RAW_SUBTASK );
+   sprintf((char*)sysCorrectedDataBuf, "%d", systoCorrDump);
    // diasto measure
-   requestAndReceive((char*)(computeData->diastoRawPtr),sizeof(unsigned int),(char*)*(computeData->diasCorrected),WILDCARD, COMPUTE_TASK , DIASTO_RAW_SUBTASK );
+   double diastoCorrDump;
+   requestAndReceive((char*)(computeData->diastoRawPtr),sizeof(unsigned int),(char*)&diastoCorrDump,sizeof(double), COMPUTE_TASK , DIASTO_RAW_SUBTASK );
+   dtostrf(diastoCorrDump, 1, 2, (char*)diasCorrectedDataBuf);
    // pulse measure
-   requestAndReceive((char*)(computeData->pulseRawPtr),sizeof(unsigned int), (char*)*(computeData->prCorrected),WILDCARD, COMPUTE_TASK , PULSE_RAW_SUBTASK );
+   unsigned int pulseCorrDump;
+   requestAndReceive((char*)(computeData->pulseRawPtr),sizeof(unsigned int), (char*)&pulseCorrDump,sizeof(unsigned int), COMPUTE_TASK , PULSE_RAW_SUBTASK );
+   sprintf((char*)pulseCorrectedDataBuf, "%d", pulseCorrDump);
    return;
 }
 
@@ -439,10 +457,11 @@ void computeTask(void* data){
 void displayTask(void* data){
    // check the timer to see if it is time to go
    static unsigned long timer = 0;
-   if (timer>0 && ((millis()-timer)<5000)){
+   if (timer!=0 && (millis()-timer)<SUSPENSION){
      return;
    }
    timer = millis();
+   Serial.print("displaying---");
    DisplayData* displayData = (DisplayData*) data;
    WarningAlarmData* bindedData = displayData->warnData;
    // Reset the TFT Screen
@@ -456,9 +475,12 @@ void displayTask(void* data){
       tft.setTextColor(GREEN);
    }
    // Show the Temprature
-   tft.print("Temperature:        ");
+   tft.print("Temperature:  ");
    tft.print((char*)*(displayData->tempCorrected));
-   tft.println(" C");
+   tft.println(" C\n");
+   // Display Blood Pressure
+   tft.setTextColor(WHITE);
+   tft.println("Pressure:\n");
    // Display Systolic
    // Figure out the color
    if ((*(bindedData->bpOutOfRange) == 1) || (*(bindedData->bpHigh) == TRUE)){
@@ -467,9 +489,9 @@ void displayTask(void* data){
       tft.setTextColor(GREEN);
    }
    // Show the Pressure
-   tft.print("Systolic Pressure:  ");
+   tft.print("   Systolic:  ");
    tft.print((char*)*(displayData->sysPressCorrected));
-   tft.println(" mm Hg");
+   tft.println(".00 mm Hg");
    // Display Diastolic
    // Figure out the color
    if ((*(bindedData->bpOutOfRange) == 1) || (*(bindedData->bpHigh) == TRUE)){
@@ -478,7 +500,7 @@ void displayTask(void* data){
       tft.setTextColor(GREEN);
    }
    // Show the Temprature
-   tft.print("Pressure Pressure: ");
+   tft.print("   Diastolic: ");
    tft.print((char*)*(displayData->diasCorrected));
    tft.println(" mm Hg");
    // Display Pulse
@@ -489,9 +511,9 @@ void displayTask(void* data){
       tft.setTextColor(GREEN);
    }
    // Show the Temprature
-   tft.print("Pulse rate:        ");
-   tft.print((char*)*(displayData->diasCorrected));
-   tft.println(" BPM");
+   tft.print("Pulse rate:   ");
+   tft.print((char*)*(displayData->prCorrected));
+   tft.println(" BPM\n");
    // Display Battery State
    // Figure out the color
    if (*(displayData->batteryState) <= BATTERY_LIMIT){
@@ -500,10 +522,11 @@ void displayTask(void* data){
       tft.setTextColor(GREEN);
    }
    // Show the Temprature
-   tft.print("Battery:           ");
+   tft.print("Battery:      ");
    char batteryStateBuffer[5];
    sprintf(batteryStateBuffer, "%d",*(displayData->batteryState));
-   tft.print(batteryStateBuffer);    
+   tft.print(batteryStateBuffer);  
+   Serial.println("Finished");  
    return;
 }
 
@@ -513,20 +536,30 @@ void alarmsAndWarningTask(void* data){
    WarningAlarmData* warnData = (WarningAlarmData*)data;
    // grab the data
    char temporaryValue = 0;
+   Bool sysWarnResult;
+   char sysAlarmResult;
    // two blood pressure types' two stuffs
-   requestAndReceive((char*)(warnData->systoRawPtr),sizeof(unsigned int), (char*)(warnData->bpOutOfRange),sizeof(unsigned char), ALARM_TASK , SYSTO_RAW_SUBTASK );
+   requestAndReceive((char*)(warnData->systoRawPtr),sizeof(unsigned int), (char*)&sysAlarmResult,sizeof(unsigned char), ALARM_TASK , SYSTO_RAW_SUBTASK );
    requestAndReceive((char*)(warnData->systoRawPtr),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , SYSTO_RAW_SUBTASK );
    if (temporaryValue==0){
-    *(warnData->bpHigh) = FALSE;
+     sysWarnResult = FALSE;
    }else{
-    *(warnData->bpHigh) = TRUE;
+     sysWarnResult = TRUE;
    }
-   requestAndReceive((char*)(warnData->diastoRawPtr),sizeof(unsigned int), (char*)(warnData->bpOutOfRange),sizeof(unsigned char), ALARM_TASK , DIASTO_RAW_SUBTASK );
+   Bool diasWarnResult;
+   char diasAlarmResult;
+   requestAndReceive((char*)(warnData->diastoRawPtr),sizeof(unsigned int), (char*)&diasAlarmResult,sizeof(unsigned char), ALARM_TASK , DIASTO_RAW_SUBTASK );
    requestAndReceive((char*)(warnData->diastoRawPtr),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , DIASTO_RAW_SUBTASK );
    if (temporaryValue==0){
-    *(warnData->bpHigh) = FALSE;
+    diasWarnResult = FALSE;
    }else{
-    *(warnData->bpHigh) = TRUE;
+    diasWarnResult = TRUE;
+   }
+   *(warnData->bpOutOfRange) = sysAlarmResult || diasAlarmResult;
+   if (sysWarnResult == FALSE && diasWarnResult == FALSE){
+     *(warnData->bpHigh) = FALSE;
+   }else{
+         *(warnData->bpHigh) = TRUE;
    }
    // tempreture's two stuffs
    requestAndReceive((char*)(warnData->tempRawPtr),sizeof(unsigned int), (char*)(warnData->tempOutOfRange),sizeof(unsigned char), ALARM_TASK , TEMP_RAW_SUBTASK );
@@ -550,12 +583,15 @@ void alarmsAndWarningTask(void* data){
 void statusTask(void* data){
    // check the timer to see if it is time to go
    static unsigned long timer = 0;
-   if (timer>0 && ((millis()-timer)<5000)){
+   if (timer!=0 && (millis()-timer)<SUSPENSION){
      return;
    }
    timer = millis();
+   Serial.print("For Status--- B=");
    StatusData* statusData = (StatusData*)data;
-   requestAndReceive((char*)(statusData->batteryState),sizeof(unsigned short), (char*)(statusData->batteryState),sizeof(unsigned short), STATUS_TASK , WILDCARD );
+   requestAndReceive((char*)(statusData->batteryState),sizeof(unsigned short), (char*)(statusData->batteryState),sizeof(unsigned short), STATUS_TASK , STATUS_TASK );
+   Serial.print(*(statusData->batteryState));
+   Serial.println(" Finished");
    return;
 }
 
@@ -595,22 +631,11 @@ void requestAndReceive(char* inputBuffer, char inputLength , char* outputBuffer,
     Serial1.write(inputBuffer[i]);
   }
   // now wait for the replies
-  // check for the outputLength. if it is WILDCARD, then the output is expecting a null terminating string
-  if (outputLength == WILDCARD){
-    char counter = 0;
-    while(Serial1.available()>0){
-      outputBuffer[counter]=Serial1.read();
-      counter++;
-    }
-    outputBuffer[counter]='\0';
-  } else {
-    // it is waiting for some certain amount of data
-    while(Serial.available()!=outputLength){
-      // just wait
-    }
-    for (char j = 0; j<outputLength; j++){
-       outputBuffer[j]=Serial1.read();
-    }
+  while(Serial1.available()<outputLength){
+    // just wait
+  }
+  for (char j = 0; j<outputLength; j++){
+     outputBuffer[j]=Serial1.read();
   }
   return;
 }
