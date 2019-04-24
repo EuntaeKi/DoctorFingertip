@@ -36,6 +36,10 @@ int pulseFlag;
 int pulseMultiplier;
 bool systolicFlag;
 bool diastolicFlag;
+bool systoInitialized;
+bool diasInitialized;
+unsigned int systoInitial;
+unsigned int diastoInitial;
 
 
 // Initialize all the values needed for measure()
@@ -54,6 +58,10 @@ void setup()
   pulseMultiplier = -1;
   tempFlag = 0;
   pulseFlag = 0;
+  systoInitialized = 0;
+  diasInitialized = 0;
+  systoInitial = 0;
+  diastoInitial = 0;
   //struct ComputeData cd;
 }
 
@@ -191,16 +199,18 @@ unsigned int temperature(unsigned int data)
 }
 
 unsigned int systolicPress(unsigned int data) {
-  //if (systolicFlag == false || dia  
-  if(data < 100) {
-    systolicFlag = false;
-    if(systCount % 2 == 0) {
-      data += 3;
-    } else {
-      data--;
-    }
+  if (systoInitialized == 0){
+    systoInitial = data;
+    systoInitialized = 1; 
+  }
+  if(data > 100) {
+    data = systoInitial;
+  }
+  systolicFlag = false;
+  if(systCount % 2 == 0) {
+    data += 3;
   } else {
-    systolicFlag = true;
+    data--;
   }
   systCount++;
   return data;
@@ -208,15 +218,18 @@ unsigned int systolicPress(unsigned int data) {
 
 unsigned int diastolicPress(unsigned int data) {
   //if (diastolicFlag == false || sys 
-  if(data >40) {
-    diastolicFlag = false;
-    if(diastCount % 2 == 0) {
-      data -= 2;
-    } else {
-      data++;
-    }
+  if (diasInitialized == 0){
+    diastoInitial = data;
+    diasInitialized = 1; 
+  }
+  if(data < 40) {
+    data = diastoInitial;
+  }
+  diastolicFlag = false;
+  if(diastCount % 2 == 0) {
+    data -= 2;
   } else {
-    diastolicFlag = true;
+    data++;
   }
   diastCount++;
   return data;
@@ -273,7 +286,7 @@ char tempRange(unsigned int data) {                 // Alarm off "0" if in range
 char sysRange(unsigned int data) {                  // Alarm off "0" if in range
   char result = 1;
   unsigned int dataCorrected = 9 + (2 * data); 
-  if (dataCorrected <= 120) { 
+  if (dataCorrected == 120) { 
     result = 0; 
   } 
   return result; 
@@ -282,7 +295,7 @@ char sysRange(unsigned int data) {                  // Alarm off "0" if in range
 char diasRange(unsigned int data) {                 // Alarm off "0" if in range
   char result = 1;
   double dataCorrected = 6 + (1.5 * data); 
-  if (dataCorrected <= 80) { 
+  if (dataCorrected == 80) { 
     result = 0; 
   } 
   return result; 

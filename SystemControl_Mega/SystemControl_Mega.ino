@@ -4,10 +4,11 @@
 #include <Elegoo_TFTLCD.h> // Hardware-specific library
 
 
-#define SUSPENSION 1500
+#define SUSPENSION 10
 #define TASK_TOTAL_COUNT 6
 #define MAX_STR_BUF_LEN 20
 #define BATTERY_LIMIT 40
+#define FULL_BATTERY 200
 #define MEASURE_TASK 1
 #define COMPUTE_TASK 2
 #define ALARM_TASK 3
@@ -17,6 +18,10 @@
 #define SYSTO_RAW_SUBTASK 2
 #define DIASTO_RAW_SUBTASK 3
 #define PULSE_RAW_SUBTASK 4
+#define TEMP_DISP_WIDTH 4
+#define SYS_PRESS_DISP_WIDTH 3
+#define DIAS_PRESS_DISP_WIDTH 6
+#define PULSE_PRESS_DISP_WIDTH 3
 #define LCD_CS A3 // Chip Select goes to Analog 3
 #define LCD_CD A2 // Command/Data goes to Analog 2
 #define LCD_WR A1 // LCD Write goes to Analog 1
@@ -152,7 +157,7 @@ unsigned char* systolicPressCorrected = NULL;
 unsigned char* diastolicPressCorrected = NULL;
 unsigned char* pulseRateCorrected = NULL;
 // Global Variables for Status
-unsigned short batteryState = 200;
+unsigned short batteryState = FULL_BATTERY;
 // Global Variables for Alarm
 unsigned char bpOutOfRange = 0;
 unsigned char tempOutOfRange = 0;
@@ -455,76 +460,92 @@ void computeTask(void* data){
 
 
 void displayTask(void* data){
-   // check the timer to see if it is time to go
-   static unsigned long timer = 0;
-   if (timer!=0 && (millis()-timer)<SUSPENSION){
-     return;
-   }
-   timer = millis();
+   // no need for the timer
    Serial.print("displaying---");
    DisplayData* displayData = (DisplayData*) data;
    WarningAlarmData* bindedData = displayData->warnData;
-   // Reset the TFT Screen
-   tft.fillScreen(BLACK);
-   tft.setCursor(0, 0);
+   tft.setCursor(0,0);
+   tft.println("    ");
+   tft.println("    ");
    // Display Temperature
    // Figure out the color
+   tft.setTextColor(WHITE);
+   tft.print("Temperature:  ");
    if ((*(bindedData->tempOutOfRange) == 1) || (*(bindedData->tempHigh) == TRUE)){
-      tft.setTextColor(RED);
+      tft.setTextColor(RED, BLACK);
    }else{
-      tft.setTextColor(GREEN);
+      tft.setTextColor(GREEN, BLACK);
    }
    // Show the Temprature
-   tft.print("Temperature:  ");
    tft.print((char*)*(displayData->tempCorrected));
+   int diff = TEMP_DISP_WIDTH-strlen((char*)*(displayData->tempCorrected));
+   for (int i = 0; i<diff; i++){
+    tft.print(" ");
+   }
    tft.println(" C\n");
    // Display Blood Pressure
    tft.setTextColor(WHITE);
    tft.println("Pressure:\n");
+   tft.print("   Systolic:  ");
    // Display Systolic
    // Figure out the color
    if ((*(bindedData->bpOutOfRange) == 1) || (*(bindedData->bpHigh) == TRUE)){
-      tft.setTextColor(RED);
+      tft.setTextColor(RED, BLACK);
    }else{
-      tft.setTextColor(GREEN);
+      tft.setTextColor(GREEN, BLACK);
    }
    // Show the Pressure
-   tft.print("   Systolic:  ");
    tft.print((char*)*(displayData->sysPressCorrected));
-   tft.println(".00 mm Hg");
+   tft.print(".00");
+   diff = SYS_PRESS_DISP_WIDTH-strlen((char*)*(displayData->sysPressCorrected));
+   for (int i = 0; i<diff; i++){
+    tft.print(" ");
+   }
+   tft.println(" mm Hg");
    // Display Diastolic
+   tft.setTextColor(WHITE);
+   tft.print("   Diastolic: ");
    // Figure out the color
    if ((*(bindedData->bpOutOfRange) == 1) || (*(bindedData->bpHigh) == TRUE)){
-      tft.setTextColor(RED);
+      tft.setTextColor(RED, BLACK);
    }else{
-      tft.setTextColor(GREEN);
+      tft.setTextColor(GREEN, BLACK);
    }
-   // Show the Temprature
-   tft.print("   Diastolic: ");
+   // Show the Dias Pressure
    tft.print((char*)*(displayData->diasCorrected));
-   tft.println(" mm Hg\n");
+   diff = DIAS_PRESS_DISP_WIDTH-strlen((char*)*(displayData->diasCorrected));
+   for (int i = 0; i<diff; i++){
+    tft.print(" ");
+   }
+   tft.println(" mm Hg");
    // Display Pulse
+   tft.setTextColor(WHITE);
+   tft.print("Pulse rate:   ");
    // Figure out the color
    if ((*(bindedData->pulseOutOfRange) == 1) || (*(bindedData->pulseLow) == TRUE)){
-      tft.setTextColor(RED);
+      tft.setTextColor(RED, BLACK);
    }else{
-      tft.setTextColor(GREEN);
+      tft.setTextColor(GREEN, BLACK);
    }
-   // Show the Temprature
-   tft.print("Pulse rate:   ");
+   // Show the PulseRate
    tft.print((char*)*(displayData->prCorrected));
+   diff = PULSE_RAW_SUBTASK-strlen((char*)*(displayData->prCorrected));
+   for (int i = 0; i<diff; i++){
+    tft.print(" ");
+   }
    tft.println(" BPM\n");
    // Display Battery State
+   tft.setTextColor(WHITE);
+   tft.print("Battery:      ");
    // Figure out the color
    if (*(displayData->batteryState) <= BATTERY_LIMIT){
-      tft.setTextColor(RED);
+      tft.setTextColor(RED, BLACK);
    }else{
-      tft.setTextColor(GREEN);
+      tft.setTextColor(GREEN, BLACK);
    }
    // Show the Temprature
-   tft.print("Battery:      ");
    char batteryStateBuffer[5];
-   sprintf(batteryStateBuffer, "%d",*(displayData->batteryState));
+   sprintf(batteryStateBuffer, "%d  ",*(displayData->batteryState));
    tft.print(batteryStateBuffer);  
    Serial.println("Finished");  
    return;
@@ -590,7 +611,9 @@ void statusTask(void* data){
    Serial.print("For Status--- B=");
    StatusData* statusData = (StatusData*)data;
    requestAndReceive((char*)(statusData->batteryState),sizeof(unsigned short), (char*)(statusData->batteryState),sizeof(unsigned short), STATUS_TASK , STATUS_TASK );
-   Serial.print(*(statusData->batteryState));
+   if (*(statusData->batteryState)==0){
+    *(statusData->batteryState) = FULL_BATTERY;  // Magical Recharge
+   }
    Serial.println(" Finished");
    return;
 }
