@@ -1,23 +1,5 @@
-//  container for read data
-
 //  EE 474 code on the uno
-
-
-
-
-/* (!!!!!!!   DELETE THIS COMMENT BEFORE TURNING IN !!!!!!!!!!!!!!! )F(G^OPJ)(UB:H)(B"_&V(*^T{(^%*^%(*&^_(*&*^<(*^(*^&^*_)>&)H:^T &(^(*&^(*P)
- *  In this file, 
-
-Implement:   All the modules that should be in UNO
-             A TaskDispatch that: 1. receives the data from Mega
-                                  2. figure out what task the Mega wants
-                                  3. do that task and write data back to Mega
-                                 
-
-(*&()*#&$()*#&$(*&()*#&$()#*&$^#^#*&^*N C(*#&(* # &#)(&#)%(&#{)(*&#(*$&#(* #HIUWHDKJHCI@U$Y@(*@ V) @)*&$@)(&$)@*$&@(*$&@)($&@($&@()*$@)($^@)&($*/
 #define BASE_TEN_BASE 10
-
-
 
 
 
@@ -254,7 +236,7 @@ unsigned int pulseRate(unsigned int data)
   return data; 
 }
 
-double tempCorrected( unsigned int data) {
+double tempCorrected(unsigned int data) {
   double dataCorrected = 5 + (0.75 * data);
   return dataCorrected;
 }
@@ -264,7 +246,7 @@ unsigned int sysCorrected(unsigned int data) {
   return dataCorrected;
 }
 
-double diasCorrected( unsigned int data) {
+double diasCorrected(unsigned int data) {
   double dataCorrected = 6 + (1.5 * data);
   return dataCorrected;
 }

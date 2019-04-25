@@ -4,7 +4,7 @@
 #include <Elegoo_TFTLCD.h> // Hardware-specific library
 
 
-#define SUSPENSION 10
+#define SUSPENSION 5000
 #define TASK_TOTAL_COUNT 6
 #define MAX_STR_BUF_LEN 20
 #define BATTERY_LIMIT 40
@@ -30,11 +30,15 @@
 #define BLACK   0x0000
 #define BLUE    0x001F
 #define RED     0xF800
-#define GREEN   0x07E0
+#define GREEN   0x0700
 #define CYAN    0x07FF
 #define MAGENTA 0xF81F
 #define YELLOW  0xFFE0
 #define WHITE   0xFFFF
+#define BACKGROUND_COLOR 0xFFFF
+#define STATIC_TEXT_COLOR 0x0000
+#define GOOD_DATA_COLOR 0x0700
+#define BAD_DATA_COLOR 0xF800
 
 
 
@@ -246,11 +250,11 @@ void initialize(){
      identifier=0x9328;
    }
    tft.begin(identifier);
-   tft.fillScreen(BLACK);
+   tft.fillScreen(BACKGROUND_COLOR);
    tft.setRotation(1);
    //unsigned long start = micros();
    tft.setCursor(0, 0);
-   tft.setTextColor(GREEN); 
+   tft.setTextColor(GOOD_DATA_COLOR); 
    tft.setTextSize(2);
    // Prepare for each task Each Tasks
    // 1. Measure
@@ -469,12 +473,12 @@ void displayTask(void* data){
    tft.println("    ");
    // Display Temperature
    // Figure out the color
-   tft.setTextColor(WHITE);
+   tft.setTextColor(STATIC_TEXT_COLOR);
    tft.print("Temperature:  ");
    if ((*(bindedData->tempOutOfRange) == 1) || (*(bindedData->tempHigh) == TRUE)){
-      tft.setTextColor(RED, BLACK);
+      tft.setTextColor(BAD_DATA_COLOR, BACKGROUND_COLOR);
    }else{
-      tft.setTextColor(GREEN, BLACK);
+      tft.setTextColor(GOOD_DATA_COLOR, BACKGROUND_COLOR);
    }
    // Show the Temprature
    tft.print((char*)*(displayData->tempCorrected));
@@ -484,15 +488,15 @@ void displayTask(void* data){
    }
    tft.println(" C\n");
    // Display Blood Pressure
-   tft.setTextColor(WHITE);
+   tft.setTextColor(STATIC_TEXT_COLOR);
    tft.println("Pressure:\n");
    tft.print("   Systolic:  ");
    // Display Systolic
    // Figure out the color
    if ((*(bindedData->bpOutOfRange) == 1) || (*(bindedData->bpHigh) == TRUE)){
-      tft.setTextColor(RED, BLACK);
+      tft.setTextColor(BAD_DATA_COLOR, BACKGROUND_COLOR);
    }else{
-      tft.setTextColor(GREEN, BLACK);
+      tft.setTextColor(GOOD_DATA_COLOR, BACKGROUND_COLOR);
    }
    // Show the Pressure
    tft.print((char*)*(displayData->sysPressCorrected));
@@ -503,13 +507,13 @@ void displayTask(void* data){
    }
    tft.println(" mm Hg");
    // Display Diastolic
-   tft.setTextColor(WHITE);
+   tft.setTextColor(STATIC_TEXT_COLOR);
    tft.print("   Diastolic: ");
    // Figure out the color
    if ((*(bindedData->bpOutOfRange) == 1) || (*(bindedData->bpHigh) == TRUE)){
-      tft.setTextColor(RED, BLACK);
+      tft.setTextColor(BAD_DATA_COLOR, BACKGROUND_COLOR);
    }else{
-      tft.setTextColor(GREEN, BLACK);
+      tft.setTextColor(GOOD_DATA_COLOR, BACKGROUND_COLOR);
    }
    // Show the Dias Pressure
    tft.print((char*)*(displayData->diasCorrected));
@@ -519,13 +523,13 @@ void displayTask(void* data){
    }
    tft.println(" mm Hg");
    // Display Pulse
-   tft.setTextColor(WHITE);
+   tft.setTextColor(STATIC_TEXT_COLOR);
    tft.print("Pulse rate:   ");
    // Figure out the color
    if ((*(bindedData->pulseOutOfRange) == 1) || (*(bindedData->pulseLow) == TRUE)){
-      tft.setTextColor(RED, BLACK);
+      tft.setTextColor(BAD_DATA_COLOR, BACKGROUND_COLOR);
    }else{
-      tft.setTextColor(GREEN, BLACK);
+      tft.setTextColor(GOOD_DATA_COLOR, BACKGROUND_COLOR);
    }
    // Show the PulseRate
    tft.print((char*)*(displayData->prCorrected));
@@ -535,13 +539,13 @@ void displayTask(void* data){
    }
    tft.println(" BPM\n");
    // Display Battery State
-   tft.setTextColor(WHITE);
+   tft.setTextColor(STATIC_TEXT_COLOR);
    tft.print("Battery:      ");
    // Figure out the color
    if (*(displayData->batteryState) <= BATTERY_LIMIT){
-      tft.setTextColor(RED, BLACK);
+      tft.setTextColor(BAD_DATA_COLOR, BACKGROUND_COLOR);
    }else{
-      tft.setTextColor(GREEN, BLACK);
+      tft.setTextColor(GOOD_DATA_COLOR, BACKGROUND_COLOR);
    }
    // Show the Temprature
    char batteryStateBuffer[5];
