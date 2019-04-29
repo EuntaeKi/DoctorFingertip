@@ -312,7 +312,7 @@ unsigned int diastolicPress(unsigned int data) {
 ******************************************/
 unsigned int pulseRate(unsigned int data)
 {
-  if ((data>40 || data<15) && pulseFlag == 1){ // reverse
+  if ((data>40 || data<15) && pulseFlag == 1) { // reverse
     pulseMultiplier = -pulseMultiplier;
     pulseFlag = 0;
   }
@@ -543,7 +543,7 @@ unsigned short statusCheck(unsigned short data) {
 * Author: Matt, Michael, Eun Tae
 ******************************************/
 void writeBack(char* data, char count){
-    for (char i = 0; i<count; i++){
+    for (char i = 0; i < count; i++){
       Serial.write(data[i]);
     }
 }
