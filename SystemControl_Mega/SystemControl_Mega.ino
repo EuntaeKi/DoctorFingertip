@@ -41,10 +41,6 @@
 #define BAD_DATA_COLOR 0xF800
 
 
-
-
-
-
 enum _myBool { FALSE = 0, TRUE = 1 };
 typedef enum _myBool Bool;
 
@@ -77,8 +73,6 @@ typedef struct
   unsigned char** prCorrected;
   
 } ComputeData; 
-
-
 
  // WarningAlarmData
 typedef struct
@@ -122,12 +116,6 @@ typedef struct
 } SchedulerData;
 
 
-
-
-
-
-
-
 // function headers
 // major functions
 void initialization();
@@ -144,10 +132,6 @@ void requestAndReceive(char* inputBuffer, char inputLength , char* outputBuffer,
 void executeTCB(TCB* taskControlBlock);
 // TFT Related
 Elegoo_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
-
-
-
-
 
 
 // Global Variables for Measurements
@@ -177,7 +161,7 @@ Bool pulseLow = FALSE;
 * function inputs: None
 * function outputs: None
 * function description: This is the function
-*                       for arduino to initializa
+*                       for arduino to initialize
 *                       the processor
 * author: Matt & Sabrina
 ******************************************/ 
@@ -400,7 +384,7 @@ void measureTask(void* data){
    requestAndReceive((char*)(measureData->diastoRawPtr) , sizeof(unsigned int),(char*)(measureData->diastoRawPtr) , sizeof(unsigned int), MEASURE_TASK , DIASTO_RAW_SUBTASK);
 
       Serial.print("3----");
-// get the raw diasto
+   // get the raw pulse rate
    requestAndReceive((char*)(measureData->pulseRawPtr) , sizeof(unsigned int),(char*)(measureData->pulseRawPtr) , sizeof(unsigned int), MEASURE_TASK , PULSE_RAW_SUBTASK );
    Serial.println("Finished");
    return;
@@ -461,8 +445,14 @@ void computeTask(void* data){
    return;
 }
 
-
-
+/******************************************
+* function name: displayTask
+* function inputs: a pointer to the DisplayData
+* function outputs: None
+* function description: This function will display
+* 						all the data in Mega onto TFT
+* author: Matt & Sabrina
+******************************************/ 
 void displayTask(void* data){
    // no need for the timer
    Serial.print("displaying---");
@@ -555,7 +545,17 @@ void displayTask(void* data){
    return;
 }
 
-
+/******************************************
+* function name: alarmAndWarningTask
+* function inputs: a pointer to the WarningAlarmData
+* function outputs: None
+* function description: This function will check
+*						whether any of the current value
+*						in Mega are out of the range
+*						or too high by calling Uno's
+*						functions
+* author: Matt & Sabrina
+******************************************/ 
 void alarmsAndWarningTask(void* data){
    // do not check time
    WarningAlarmData* warnData = (WarningAlarmData*)data;
@@ -641,7 +641,13 @@ void executeTCB(TCB* taskControlBlock){
 
 /******************************************
 * function name: requestAndReceive
-* function inputs: 
+* function inputs:  char* to set input buffer,
+*					char to represent input buffer length
+*					char* for output buffer,
+*					char to represent output buffer length
+* 					char to represent task type,
+*					and char to represent which variable to
+*					perform task on.
 * function outputs: None
 * function description: This function will setup
 *                       the communication between
@@ -667,5 +673,4 @@ void requestAndReceive(char* inputBuffer, char inputLength , char* outputBuffer,
   return;
 }
 
-
-//  end EE 474 code
+//  end of EE 474 code
