@@ -1,13 +1,34 @@
-//  EE 474 code on the uno
 #define BASE_TEN_BASE 10
 
-
-
-// REMEMBER TO PUT FUNCTION DEF HERE ACCORDING TO CODE STANDARD
+// function headers
+void setup();
+void taskDispatcher(byte task, byte subtask);
 void writeBack(char* data, char count);
+// For measurement
+unsigned int temperature(unsigned int data);
+unsigned int systolicPress(unsigned int data);
+unsigned int diastolicPress(unsinged int data);
+unsigned int pulseRate(unsigned int data);
+unsigned int statusCheck(unsigned short data);
+// For compute
+double tempCorrected(unsigned int data);
+unsigned int sysCorrected(unsigned int data);
+double diasCorrected(unsigned int data);
+unsigned int prCorrected(unsigned int data);
+// For alarm
+char tempRange(unsigned int data);
+char sysRange(unsigned int data);
+char diasRange(unsigned int data);
+char prRange(unsigned int data);
+// For warning
+char tempHigh(unsigned int data);
+char sysHigh(unsigned int data);
+char diasHigh(unsigned int data);
+char prHigh(unsigned int data);
 
 
-// Global Variables for Function Call Counter
+// Gloabal Variables for Uno
+// Variables for measure and compute functions
 int tempCount;
 int tempFlag;
 int tempMultiplier;
@@ -24,7 +45,17 @@ unsigned int systoInitial;
 unsigned int diastoInitial;
 
 
-// Initialize all the values needed for measure()
+/******************************************
+* Function Name: setup
+* Function Inputs: None
+* Function Outputs: None
+* Function Description: Start the serial port and
+*						set the global variables
+*						to appropriate values 
+*
+*
+* Author: Matt, Michael, Eun Tae
+******************************************/
 void setup()
 {
   // running on the uno - connect to tx1 and rx1 on the mega and to rx and tx on the uno
@@ -47,7 +78,18 @@ void setup()
   //struct ComputeData cd;
 }
 
-
+/******************************************
+* Function Name: loop
+* Function Inputs: none
+* Function Outputs: none
+* Function Description: Waits until Mega writes 2 task bytes
+*						First read from the Serial will be 
+*						the task (Measure,Compute), and second
+*						byte will be the type of task.
+*						Based on the received byte,
+*						dispatch appropriate function.
+* Author: Matt, Michael, Eun Tae
+******************************************/
 void loop()
 {
   while(Serial.available()<2)
@@ -60,7 +102,19 @@ void loop()
 }
 
  
-
+/******************************************
+* Function Name: taskDispatcher
+* Function Inputs: bytes respresenting task and subtask
+*				   respectively
+* Function Outputs: None
+* Function Description: Based on the inputs,
+* 						it will read the next necessary
+*						data from Serial.
+*						Afterward, it will call appropriate
+*						function - measure, compute, alarm,
+*						warning, status
+* Author: Matt, Michael, Eun Tae
+******************************************/
 void taskDispatcher(byte task,  byte subtask){
   // Measure = 1
   // Compute = 2
@@ -158,6 +212,16 @@ void taskDispatcher(byte task,  byte subtask){
   }
 }
 
+/******************************************
+* Function Name: temperature
+* Function Inputs: Integer of raw data
+* Function Outputs: Integer of processed data
+* Function Description: Increase or decrease the temperature
+*						for each function call
+*						based on the current value and function
+*						call count.
+* Author: Matt, Michael, Eun Tae
+******************************************/
 unsigned int temperature(unsigned int data)
 {
   // What should happen when it is over 50. it should start ticking down right?
@@ -180,6 +244,16 @@ unsigned int temperature(unsigned int data)
   return data; 
 }
 
+/******************************************
+* Function Name: systolicPress
+* Function Inputs: Integer of raw data
+* Function Outputs: Integer of processed data
+* Function Description: Increase or decrease the systolic
+*						pressure for each function call
+*						based on the current value and function
+*						call count.
+* Author: Matt, Michael, Eun Tae
+******************************************/
 unsigned int systolicPress(unsigned int data) {
   if (systoInitialized == 0){
     systoInitial = data;
@@ -198,6 +272,16 @@ unsigned int systolicPress(unsigned int data) {
   return data;
 }
 
+/******************************************
+* Function Name: diastolicPress
+* Function Inputs: Integer of raw data
+* Function Outputs: Integer of processed data
+* Function Description: Increase or decrease the diastolic
+*						pressure for each function call
+*						based on the current value and function
+*						call count.
+* Author: Matt, Michael, Eun Tae
+******************************************/
 unsigned int diastolicPress(unsigned int data) {
   //if (diastolicFlag == false || sys 
   if (diasInitialized == 0){
@@ -217,6 +301,16 @@ unsigned int diastolicPress(unsigned int data) {
   return data;
 }
 
+/******************************************
+* Function Name: pulseRate
+* Function Inputs: Integer of raw data
+* Function Outputs: Integer of processed data
+* Function Description: Increase or decrease the pulse
+*						rate for each function call
+*						based on the current value and function
+*						call count.
+* Author: Matt, Michael, Eun Tae
+******************************************/
 unsigned int pulseRate(unsigned int data)
 {
   if ((data>40 || data<15) && pulseFlag == 1){ // reverse
@@ -236,27 +330,71 @@ unsigned int pulseRate(unsigned int data)
   return data; 
 }
 
+/******************************************
+* Function Name: tempCorrected
+* Function Inputs: Integer of raw data
+* Function Outputs: Double of corrected data
+* Function Description: perform a conversion of
+*						data from measured data to
+*						computed data in Celsius
+* Author: Matt, Michael, Eun Tae
+******************************************/
 double tempCorrected(unsigned int data) {
   double dataCorrected = 5 + (0.75 * data);
   return dataCorrected;
 }
 
+/******************************************
+* Function Name: sysCorrected
+* Function Inputs: Integer of raw data
+* Function Outputs: Double of corrected data
+* Function Description: perform a conversion of
+*						data from measured data to
+*						computed data in mmHg
+* Author: Matt, Michael, Eun Tae
+******************************************/
 unsigned int sysCorrected(unsigned int data) {
   unsigned int dataCorrected = 9 + (2 * data);
   return dataCorrected;
 }
 
+/******************************************
+* Function Name: diasCorrected
+* Function Inputs: Integer of raw data
+* Function Outputs: Double of corrected data
+* Function Description: perform a conversion of
+*						data from measured data to
+*						computed data in mmHg
+* Author: Matt, Michael, Eun Tae
+******************************************/
 double diasCorrected(unsigned int data) {
   double dataCorrected = 6 + (1.5 * data);
   return dataCorrected;
 }
 
+/******************************************
+* Function Name: prCorrected
+* Function Inputs: Integer of raw data
+* Function Outputs: Double of corrected data
+* Function Description: perform a conversion of
+*						data from measured data to
+*						computed data in BPM
+* Author: Matt, Michael, Eun Tae
+******************************************/
 unsigned int prCorrected(unsigned int data) {
   unsigned int dataCorrected = 8 + (3 * data);
   return dataCorrected;
 }
 
-char tempRange(unsigned int data) {                 // Alarm off "0" if in range 
+/******************************************
+* Function Name: tempRange
+* Function Inputs: Integer of raw data
+* Function Outputs: Character, which behaves like boolean
+* Function Description: Checks whether given input temperature
+*						is within the range of normal
+* Author: Matt, Michael, Eun Tae
+******************************************/
+char tempRange(unsigned int data) {                 
   char result = 1; 
   double dataCorrected = 5 + (0.75 * data);
   if (dataCorrected >= 36.1 && dataCorrected <= 37.8) { 
@@ -265,7 +403,15 @@ char tempRange(unsigned int data) {                 // Alarm off "0" if in range
   return result; 
 } 
 
-char sysRange(unsigned int data) {                  // Alarm off "0" if in range
+/******************************************
+* Function Name: sysRange
+* Function Inputs: Integer of raw data
+* Function Outputs: Character, which behaves like boolean
+* Function Description: Checks whether given input systolic
+*						pressure is within the range of normal
+* Author: Matt, Michael, Eun Tae
+******************************************/
+char sysRange(unsigned int data) {                  
   char result = 1;
   unsigned int dataCorrected = 9 + (2 * data); 
   if (dataCorrected == 120) { 
@@ -274,7 +420,15 @@ char sysRange(unsigned int data) {                  // Alarm off "0" if in range
   return result; 
 } 
 
-char diasRange(unsigned int data) {                 // Alarm off "0" if in range
+/******************************************
+* Function Name: diasRange
+* Function Inputs: Integer of raw data
+* Function Outputs: Character, which behaves like boolean
+* Function Description: Checks whether given input diastolic
+*						pressure is within the range of normal
+* Author: Matt, Michael, Eun Tae
+******************************************/
+char diasRange(unsigned int data) {                 
   char result = 1;
   double dataCorrected = 6 + (1.5 * data); 
   if (dataCorrected == 80) { 
@@ -283,6 +437,14 @@ char diasRange(unsigned int data) {                 // Alarm off "0" if in range
   return result; 
 } 
 
+/******************************************
+* Function Name: prRange
+* Function Inputs: Integer of raw data
+* Function Outputs: Character, which behaves like boolean
+* Function Description: Checks whether given input pulse rate
+*						is within the range of normal
+* Author: Matt, Michael, Eun Tae
+******************************************/
 char prRange(unsigned int data) { 
   char result = 1; 
   unsigned int dataCorrected = 8 + (3 * data);
@@ -292,7 +454,15 @@ char prRange(unsigned int data) {
   return result; 
 } 
 
-char tempHigh(unsigned int data) {                 // Alarm off "0" if in range 
+/******************************************
+* Function Name: tempHigh
+* Function Inputs: Integer of raw data
+* Function Outputs: Character, which behaves like boolean
+* Function Description: Checks whether given input temperature
+* 						is above 37.8 Celsius
+* Author: Matt, Michael, Eun Tae
+******************************************/
+char tempHigh(unsigned int data) {                  
   char result = 1; 
   double dataCorrected = 5 + (0.75 * data);
   if (dataCorrected <= 37.8) { 
@@ -301,7 +471,15 @@ char tempHigh(unsigned int data) {                 // Alarm off "0" if in range
   return result; 
 } 
 
-char sysHigh(unsigned int data) {                  // Alarm off "0" if in range
+/******************************************
+* Function Name: sysHigh
+* Function Inputs: Integer of raw data
+* Function Outputs: Character, which behaves like boolean
+* Function Description: Checks whether given input systolic
+* 						pressure is above 120 mmHg
+* Author: Matt, Michael, Eun Tae
+******************************************/
+char sysHigh(unsigned int data) {                  
   char result = 1;
   unsigned int dataCorrected = 9 + (2 * data); 
   if (dataCorrected <= 120) { 
@@ -310,7 +488,15 @@ char sysHigh(unsigned int data) {                  // Alarm off "0" if in range
   return result; 
 } 
 
-char diasHigh(unsigned int data) {                 // Alarm off "0" if in range
+/******************************************
+* Function Name: diasHigh
+* Function Inputs: Integer of raw data
+* Function Outputs: Character, which behaves like boolean
+* Function Description: Checks whether given input diastolic
+* 						pressure is above 80 mmHg
+* Author: Matt, Michael, Eun Tae
+******************************************/
+char diasHigh(unsigned int data) {                 
   char result = 1;
   double dataCorrected = 6 + (1.5 * data); 
   if (dataCorrected <= 80) { 
@@ -319,6 +505,14 @@ char diasHigh(unsigned int data) {                 // Alarm off "0" if in range
   return result; 
 } 
 
+/******************************************
+* Function Name: prHigh
+* Function Inputs: Integer of raw data
+* Function Outputs: Character, which behaves like boolean
+* Function Description: Checks whether given input pulse
+* 						rate is above 100 BPM
+* Author: Matt, Michael, Eun Tae
+******************************************/
 char prHigh(unsigned int data) { 
   char result = 1; 
   unsigned int dataCorrected = 8 + (3 * data);
@@ -328,17 +522,31 @@ char prHigh(unsigned int data) {
   return result; 
 } 
 
+/******************************************
+* Function Name: statusCheck
+* Function Inputs: unsigned short data
+* Function Outputs: unsinged short noting battery status
+* Function Description: Checks whether given input systolic
+* 						pressure is above 120 mmHg
+* Author: Matt, Michael, Eun Tae
+******************************************/
 unsigned short statusCheck(unsigned short data) { 
   return --data; 
 }
 
+/******************************************
+* Function Name: writeBack
+* Function Inputs: string of data and char, count
+* Function Outputs: none
+* Function Description: writes the array of data
+						input into Serial for Mega
+						to take in.
+* Author: Matt, Michael, Eun Tae
+******************************************/
 void writeBack(char* data, char count){
     for (char i = 0; i<count; i++){
       Serial.write(data[i]);
     }
 }
 
-
-
-
-//  end EE 474 code
+//  end of EE 474 code
