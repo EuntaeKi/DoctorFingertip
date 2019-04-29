@@ -75,7 +75,6 @@ void setup()
   diasInitialized = 0;
   systoInitial = 0;
   diastoInitial = 0;
-  //struct ComputeData cd;
 }
 
 /******************************************
