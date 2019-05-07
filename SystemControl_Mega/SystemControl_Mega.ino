@@ -44,10 +44,12 @@
 enum _myBool { FALSE = 0, TRUE = 1 };
 typedef enum _myBool Bool;
 
-typedef struct
+typedef struct TCB
 {
    void (*myTask)(void*);
    void* taskDataPtr;
+   struct TCB* next;
+   struct TCB* prev;
 } TCB;
  
 //MeasureData Struct
