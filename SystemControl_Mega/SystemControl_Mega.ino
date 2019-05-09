@@ -137,14 +137,12 @@ Elegoo_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 
 
 // Global Variables for Measurements
-unsigned int temperatureRaw = 75;
-unsigned int systolicPressRaw = 80;
-unsigned int diastolicPressRaw = 80;
-unsigned int pulseRateRaw = 50;
+unsigned int temperatureRawBuf[8];
+unsigned int bloodPressureRawBuf[16];
+unsigned int pulseRateRawBuf[8];
 // Global Variables for Display
-unsigned char* tempCorrected = NULL;
+unsigned char* tempCorrectedBuf[8];
 unsigned char* systolicPressCorrected = NULL;
-unsigned char* diastolicPressCorrected = NULL;
 unsigned char* pulseRateCorrected = NULL;
 // Global Variables for Status
 unsigned short batteryState = FULL_BATTERY;
