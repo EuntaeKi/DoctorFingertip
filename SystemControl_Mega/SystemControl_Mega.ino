@@ -44,77 +44,58 @@
 enum _myBool { FALSE = 0, TRUE = 1 };
 typedef enum _myBool Bool;
 
-typedef struct TCB
+typedef struct
 {
    void (*myTask)(void*);
    void* taskDataPtr;
-   struct TCB* next;
-   struct TCB* prev;
+   TCB* next;
+   TCB* prev;
 } TCB;
- 
-//MeasureData Struct
-typedef struct
-{
-  unsigned int* tempRawPtr;
-  unsigned int* systoRawPtr;
-  unsigned int* diastoRawPtr;
-  unsigned int* pulseRawPtr;
-} MeasureData; 
- 
- //ComputeData Struct
- 
-typedef struct
-{
-  unsigned int* tempRawPtr;
-  unsigned int* systoRawPtr;
-  unsigned int* diastoRawPtr;
-  unsigned int* pulseRawPtr;
-  unsigned char** tempCorrected;
-  unsigned char** sysPressCorrected;
-  unsigned char** diasCorrected;
-  unsigned char** prCorrected;
-  
-} ComputeData; 
 
- // WarningAlarmData
-typedef struct
+typedef struct 
 {
-  unsigned int* tempRawPtr;
-  unsigned int* systoRawPtr;
-  unsigned int* diastoRawPtr;
-  unsigned int* pulseRawPtr;
-  unsigned short* batteryState;
-  unsigned char* bpOutOfRange;
-  unsigned char* tempOutOfRange;
-  unsigned char* pulseOutOfRange;
-  Bool* bpHigh;
-  Bool* tempHigh;
-  Bool* pulseLow;
-} WarningAlarmData;
+  unsigned int** tempRawBufPtr;
+  unsigned char*** tempCorrectedBufPtr;
+  unsigned char* tempOutOfRangePtr;
+  Bool* tempHighPtr;
+} TemperatureData;
+
+typedef struct 
+{
+  unsigned int** bpRawBufPtr;
+  unsigned char*** bpCorrectedBufPtr;
+  unsigned char* bpOutOfRangePtr;
+  Bool* bpHighPtr;
+} BPData;
+
+typedef struct 
+{
+  unsigned int** prRawBufPtr;
+  unsigned char*** prCorrectedBufPtr;
+  unsigned char* pulseOutOfRangePtr;
+  Bool* pulseLowPtr;
+} PRData;
 
 //DisplayData
 typedef struct
 {
-  unsigned char** tempCorrected;
-  unsigned char** sysPressCorrected;
-  unsigned char** diasCorrected;
-  unsigned char** prCorrected;
+  unsigned TemperatureData* tempData;
+  unsigned BPData* bpData;
+  unsigned PRData* prData;
   unsigned short* batteryState;
-  WarningAlarmData* warnData;
 }  DisplayData;
 
 // StatusData
 typedef struct
 {
   unsigned short* batteryState;
-   
 } StatusData;
 
  // SchedulerData
 typedef struct
 {
-  TCB** tasks;
-  unsigned int taskCount;
+  TCB* head;
+  TCB* tail;
 } SchedulerData;
 
 
@@ -123,15 +104,18 @@ typedef struct
 void initialization();
 void scheduleTask(void* data);
 // task functions
-void measureTask(void* data);
-void computeTask(void* data);
+void temperatureTasks(void* data);
+void bloodPressureTask(void* data);
+void pulseRateTask(void* data);
 void displayTask(void* data);
 void statusTask(void* data);
-void alarmsAndWarningTask(void* data);
 // Intrasystem Communication functions
 void requestAndReceive(char* inputBuffer, char inputLength , char* outputBuffer, char outputLength, char taskType, char subTaskType);
 // TCB executer functions
 void executeTCB(TCB* taskControlBlock);
+// TaskQueue Management
+void insertTask(TCB* task);
+void deleteTask(TCB* task);
 // TFT Related
 Elegoo_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 
@@ -142,8 +126,12 @@ unsigned int bloodPressureRawBuf[16];
 unsigned int pulseRateRawBuf[8];
 // Global Variables for Display
 unsigned char* tempCorrectedBuf[8];
-unsigned char* systolicPressCorrected = NULL;
-unsigned char* pulseRateCorrected = NULL;
+unsigned char* bloodPressureCorrectedBuf[16];
+unsigned char* pulseRateCorrectedBuf[8];
+// Global Variables for Function Counter
+unsigned char tempCount = 0;
+unsigned char bpCount = 0;
+unsigned char prCount = 0;
 // Global Variables for Status
 unsigned short batteryState = FULL_BATTERY;
 // Global Variables for Alarm
@@ -154,6 +142,13 @@ unsigned char pulseOutOfRange = 0;
 Bool bpHigh = FALSE;
 Bool tempHigh = FALSE;
 Bool pulseLow = FALSE;
+//Global variables for all possible tasks
+TCB* temperatureTCB;
+TCB* bloodPressureTCB;
+TCB* pulseRateTCB;
+TCB* displayTCB;
+TCB* statusTCB;
+SchedulerData* schedulerTaskQueue;
 
 
 /******************************************
@@ -215,12 +210,12 @@ void initialize(){
    } else if(identifier==0x0101)
    {
        identifier=0x9341;
-        Serial.println(F("Found 0x9341 LCD driver"));
+       Serial.println(F("Found 0x9341 LCD driver"));
    }
    else if(identifier==0x1111)
    {
        identifier=0x9328;
-        Serial.println(F("Found 0x9328 LCD driver"));
+       Serial.println(F("Found 0x9328 LCD driver"));
    }
    else {
      Serial.print(F("Unknown LCD driver chip: "));
@@ -241,63 +236,67 @@ void initialize(){
    tft.setTextColor(GOOD_DATA_COLOR); 
    tft.setTextSize(2);
    // Prepare for each task Each Tasks
-   // 1. Measure
-   // data:
-   MeasureData measureData;
-   measureData.tempRawPtr = &temperatureRaw;
-   measureData.systoRawPtr = &systolicPressRaw;
-   measureData.diastoRawPtr = &diastolicPressRaw;
-   measureData.pulseRawPtr = &pulseRateRaw;
+   // 1. Temperature
+   // Data:
+   TemperatureData temperatureData;
+   temperatureData.tempRawBufPtr = &temperatureRawBuf;
+   temperatureData.tempCorrectedBufPtr = &tempCorrectedBuf;
+   temperatureData.tempOutOfRangePtr = &tempOutOfRange;
+   temperatureData.tempHighPtr = &tempHigh;
+   
    // TCB:
-   TCB measureTaskControlBlock;
-   measureTaskControlBlock.myTask = measureTask;
-   measureTaskControlBlock.taskDataPtr = (void*)&measureData;
-   // 2. Compute
+   TCB temperatureTaskControlBlock;
+   temperatureTaskControlBlock.myTask = temperatureTask;
+   temperatureTaskControlBlock.taskDataPtr = (void*)&temperatureData;
+   temperatureTaskControlBlock.next = NULL;
+   temperatureTaskControlBlock.prev = NULL;
+   temperatureTCB = &temperatureTaskControlBlock;
+   
+   // 2. BloodPressure
    // data:
-   ComputeData computeData;
-   computeData.tempRawPtr = &temperatureRaw;
-   computeData.systoRawPtr = &systolicPressRaw;
-   computeData.diastoRawPtr = &diastolicPressRaw;
-   computeData.pulseRawPtr = &pulseRateRaw;
-   computeData.tempCorrected = &tempCorrected;
-   computeData.sysPressCorrected = &systolicPressCorrected;
-   computeData.diasCorrected = &diastolicPressCorrected;
-   computeData.prCorrected = &pulseRateCorrected;
+   BPData bpData;
+   bpData.bpRawBufPtr = &bloodPressureRawBuf;
+   bpData.bpCorrectedBufPtr = &bloodPressureCorrectedBuf;
+   bpData.bpOutOfRangePtr = &bpOutofRange;
+   bpData.bpHighPtr = &bpHigh;
    // TCB:
-   TCB computeTaskControlBlock;
-   computeTaskControlBlock.myTask = computeTask;
-   computeTaskControlBlock.taskDataPtr = (void*)&computeData;
-   // 3. Warning and Alarm
+   TCB bpTaskControlBlock;
+   bpTaskControlBlock.myTask = bloodPressureTask;
+   bpTaskControlBlock.taskDataPtr = (void*)&bpData;
+   bpTaskControlBlock.next = NULL;
+   bpTaskControlBlock.prev = NULL;
+   bloodPressureTCB = &bpTaskControlBlock;
+   
+   // 3. Pulse Rate
    // data:
-   WarningAlarmData warnalarmData;
-   warnalarmData.tempRawPtr = &temperatureRaw;
-   warnalarmData.systoRawPtr = &systolicPressRaw;
-   warnalarmData.diastoRawPtr = &diastolicPressRaw;
-   warnalarmData.pulseRawPtr = &pulseRateRaw;
-   warnalarmData.batteryState = &batteryState;
-   warnalarmData.bpOutOfRange = &bpOutOfRange;
-   warnalarmData.tempOutOfRange = &tempOutOfRange;
-   warnalarmData.pulseOutOfRange = &pulseOutOfRange;
-   warnalarmData.bpHigh = &bpHigh;
-   warnalarmData.tempHigh = &tempHigh;
-   warnalarmData.pulseLow = &pulseLow;
+   PRData prData;
+   prData.prRawBufPtr = &pulseRateRawBuf;
+   prData.prCorrectedBufPtr = &pulseRateCorrectedBuf;
+   prData.pulseOutOfRangePtr = &pulseOutOfRange;
+   prData.pulseLowPtr = &pulseLow;
    // TCB:
-   TCB warnAndAlarmTaskControlBlock;
-   warnAndAlarmTaskControlBlock.myTask = alarmsAndWarningTask;
-   warnAndAlarmTaskControlBlock.taskDataPtr = (void*)&warnalarmData;
+   TCB prTaskControlBlock;
+   prTaskControlBlock.myTask = pulseRateTask;
+   prTaskControlBlock.taskDataPtr = (void*)&prData;
+   prTaskControlBlock.next = NULL;
+   prTaskControlBlock.prev = NULL
+   pulseRateTCB = &prTaskControlBlock;
+   
     // 4. Display
    // data:
    DisplayData displayData;
-   displayData.tempCorrected = &tempCorrected;
-   displayData.sysPressCorrected = &systolicPressCorrected;
-   displayData.diasCorrected = &diastolicPressCorrected;
-   displayData.prCorrected = &pulseRateCorrected;
+   displayData.tempData =&temperatureData;
+   displayData.bpData = &bpData;
+   displayData.prData = &prData;
    displayData.batteryState = &batteryState;
-   displayData.warnData = &warnalarmData;
    // TCB:
    TCB displayTaskControlBlock;
    displayTaskControlBlock.myTask = displayTask;
    displayTaskControlBlock.taskDataPtr = (void*)&displayData;
+   displayTaskControlBlock.next = NULL;
+   displayTaskControlBlock.prev = NULL;
+   displayTCB = &displayTaskControlBlock;
+   
    // 5. Status
    // data:
    StatusData statusData;
@@ -306,22 +305,24 @@ void initialize(){
    TCB statusTaskControlBlock;
    statusTaskControlBlock.myTask = statusTask;
    statusTaskControlBlock.taskDataPtr = (void*)&statusData;
+   statusTaskControlBlock.next = NULL;
+   statusTaskControlBlock.next = NULL;
+   statusTCB = &statusTaskControlBlock;
+
+   
    // 6. Schedule
    // data:
-   TCB* allTasks[6];
-   allTasks[0] = &measureTaskControlBlock;
-   allTasks[1] = &computeTaskControlBlock;
-   allTasks[2] = &warnAndAlarmTaskControlBlock;
-   allTasks[3] = &statusTaskControlBlock;
-   allTasks[4] = &displayTaskControlBlock;
-   allTasks[5] = NULL;
    SchedulerData schedulerData;
-   schedulerData.tasks = allTasks;
-   schedulerData.taskCount = TASK_TOTAL_COUNT;
+   schedulerData.head = NULL;
+   schedulerData.tail = NULL;
+   schedulerTaskQueue = &schedulerData;
    // TCB:
    TCB scheduleTaskControlBlock;
    scheduleTaskControlBlock.myTask = scheduleTask;
    scheduleTaskControlBlock.taskDataPtr = (void*)&schedulerData;
+   // Insert the basic TCBs in
+   insertTask(statusTCB);
+   insertTask(displayTCB);
    // Start the scheduler task
    executeTCB(&scheduleTaskControlBlock);
    return;
@@ -338,20 +339,170 @@ void initialize(){
 ******************************************/ 
 void scheduleTask(void* data){
    SchedulerData* schedulerData = (SchedulerData*)data;
-   unsigned int totalCount = schedulerData->taskCount;
-   unsigned int counter = 0;
+   // pick the first task to run.
+   TCB* currTask = schedulerData->head;
    // forever execute each task
    while(1){
-    // figure out the current task index
-    counter = counter % totalCount;
-    // if it is a good task, run it
-    TCB* nextTask= (schedulerData->tasks)[counter];
-    if (nextTask != NULL){
-      executeTCB(nextTask);
+    if (currTask ==  null){
+      // at the end or nothing. go back to head, or spin forever
+      currTask = schedulerData->head;
+    } else {
+      // good task, execute it
+      executeTCB(currTask);
+      // move on
+      currTask = currTask->next;
+      // future addition for the TFT touch screen
+      //???????????????????????
     }
-    counter++;
    }
    return;
+}
+
+
+/******************************************
+* function name: insertTask
+* function inputs: a pointer to a TCB block
+* function outputs: None
+* function description: This function will insert
+*                       a TCB to the end of
+*                       the task queue
+* author: Matt & Sabrina
+******************************************/ 
+void insertTask(TCB* task){
+  TCB* currHead = schedulerTaskQueue->head;
+  TCB* currTail = schedulerTaskQueue->tail;
+  if (NULL == currHead){
+    // this is the first task ever,
+    schedulerTaskQueue->head = task;
+    schedulerTaskQueue->tail = task;
+  }else{
+    // attach it to the tail
+    currTail->next = task;
+    task->prev = currTail;
+    schedulerTaskQueue->tail = task;
+  }
+  return;
+}
+
+/******************************************
+* function name: deleteTask
+* function inputs: a pointer to a TCB block
+* function outputs: None
+* function description: This function will delete
+*                       the TCB block in the queue
+* author: Matt & Sabrina
+******************************************/
+void deleteTask(TCB* task){
+  TCB* currHead = schedulerTaskQueue->head;
+  TCB* currTail = schedulerTaskQueue->tail;
+  if (currHead == NULL){
+    // nothing to delete anyway
+  } else if (currHead == currTail && task == currHead){
+    // deleting the only one node
+    schedulerTaskQueue->head = NULL;
+    schedulerTaskQueue->tail = NULL;
+  } else if (task == currHead){ // so we have more than one tasks
+    // we are deleteing the head. promote its next to be head
+    schedulerTaskQueue->head = task->next;
+  } else if (task == currTail){
+    // we are deleting the tail. drag the prev to be tail.
+    schedulerTaskQueue->tail = task->prev;
+  } else {
+    // the task is in the middle
+    if (task->next == NULL || task->prev == NULL){
+      // this task is not even in the queue
+      return;
+    }
+    // connect the prev and the next
+    itsPrev = task->prev;
+    itsNext = task->next;
+    itsPrev->next = itsNext;
+    itsNext->prev = itsPrev;
+    // and we are done
+  }
+  // finall, clean the task
+  task->next = NULL;
+  task->prev = NULL;
+}
+
+void temperatureTasks(void* data) {
+  static unsigned long timer = 0;
+  if (timer != 0 && (millis() - timer) < SUSPENSION) {
+    return;
+  }
+  timer = millis();
+  TemperatureData* temperatureData = (TemperatureData*)data;
+  requestAndReceive((char*)&(*(temperatureData->tempRawBufPtr)[tempCount]), sizeof(unsigned int), 
+  (char*)&(*(temperatureData->tempRawBufPtr)[tempCount]),sizeof(unsigned int), MEASURE_TASK, TEMP_RAW_SUBTASK);
+  for (int iii = 0; iii< 8; iii++){
+    Serial.print(temperatureRawBuf[iii]);
+    Serial.print(",");    
+  }
+  Serial.print("\n");
+  double tempCorrDump;
+  requestAndReceive((char*)&(*(temperatureData->tempRawBufPtr[tempCount])),sizeof(unsigned int),
+  (char*)&tempCorrDump, sizeof(double), COMPUTE_TASK, TEMP_RAW_SUBTASK);
+  dtostrf(tempCorrDump, 1, 2, (char*)&(*tempCorrectedDataBuf)[tempCount]);
+  tempCount = (tempCount + 1) % 8;
+  Serial.print("Temperature Measurement Complete");
+  return;
+}
+
+
+void pulseRateTasks(void* data) {
+  static unsigned long timer = 0;
+  if (timer != 0 && (millis() - timer) < SUSPENSION) {
+    return;
+  }
+  timer = millis();
+  BPData* bloodPressureData = (BPData*)data;
+  // Measure Systolic
+  requestAndReceive((char*)&(*(bloodPressureData->bpRawBufPtr)[bpCount]), sizeof(unsigned int), 
+  (char*)&(*(bloodPressureData->bpRawBufPtr)[bpCount]), sizeof(unsigned int), MEASURE_TASK, SYSTO_RAW_SUBTASK);
+  // Measure Diastolic
+  requestAndReceive((char*)&(*(bloodPressureData->bpRawBufPtr)[bpCount + 8]), sizeof(unsigned int), 
+  (char*)&(*(bloodPressureData->bpRawBufPtr)[bpCount + 8]), sizeof(unsigned int), MEASURE_TASK, DIASTO_RAW_SUBTASK);
+  for (int iii = 0; iii< 8; iii++){
+    Serial.print(bpRawBuf[iii]);
+    Serial.print(",");    
+  }
+  Serial.print("\n");
+  
+  double bpCorrDump;
+  // Compute Systolic
+  requestAndReceive((char*)&(*(bloodPressureData->bpRawBufPtr[bpCount])),sizeof(unsigned int),
+  (char*)&bpCorrDump, sizeof(double), COMPUTE_TASK, SYSTO_RAW_SUBTASK);
+  dtostrf(bpCorrDump, 1, 2, (char*)&(*prCorrectedDataBuf)[bpCount]);
+  // Compute Diastolic
+  requestAndReceive((char*)&(*(bloodPressureData->bpRawBufPtr[bpCount + 8])),sizeof(unsigned int),
+  (char*)&bpCorrDump, sizeof(double), COMPUTE_TASK, DIASTO_RAW_SUBTASK);
+  dtostrf(bpCorrDump, 1, 2, (char*)&(*prCorrectedDataBuf)[bpCount + 8]);
+  prCount = (prCount + 1) % 8;
+  Serial.print("Blood Pressure Measurement Complete");
+  return;
+}
+
+void pulseRateTasks(void* data) {
+  static unsigned long timer = 0;
+  if (timer != 0 && (millis() - timer) < SUSPENSION) {
+    return;
+  }
+  timer = millis();
+  PRData* pulseRateData = (PRData*)data;
+  requestAndReceive((char*)&(*(pulseRateData->prRawBufPtr)[prCount]), sizeof(unsigned int), 
+  (char*)&(*(pulseRateData->prRawBufPtr)[prCount]),sizeof(unsigned int), MEASURE_TASK, PULSE_RAW_SUBTASK);
+  for (int iii = 0; iii< 8; iii++){
+    Serial.print(pulseRateRawBuf[iii]);
+    Serial.print(",");    
+  }
+  Serial.print("\n");
+  double prCorrDump;
+  requestAndReceive((char*)&(*(pulseRateData->prRawBufPtr[prCount])),sizeof(unsigned int),
+  (char*)&prCorrDump, sizeof(double), COMPUTE_TASK, PULSE_RAW_SUBTASK);
+  dtostrf(prCorrDump, 1, 2, (char*)&(*prCorrectedDataBuf)[prCount]);
+  prCount = (prCount + 1) % 8;
+  Serial.print("Pulse Rate Measurement Complete");
+  return;
 }
 
 /******************************************
