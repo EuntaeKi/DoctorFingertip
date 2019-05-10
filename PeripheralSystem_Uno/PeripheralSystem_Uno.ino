@@ -7,9 +7,9 @@ void writeBack(char* data, char count);
 // For measurement
 unsigned int temperature(unsigned int data);
 unsigned int systolicPress(unsigned int data);
-unsigned int diastolicPress(unsinged int data);
+unsigned int diastolicPress(unsigned int data);
 unsigned int pulseRate(unsigned int data);
-unsigned int statusCheck(unsigned short data);
+unsigned short statusCheck(unsigned short data);
 // For compute
 double tempCorrected(unsigned int data);
 unsigned int sysCorrected(unsigned int data);
