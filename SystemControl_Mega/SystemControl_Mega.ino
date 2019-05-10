@@ -4,7 +4,7 @@
 #include <Elegoo_TFTLCD.h> // Hardware-specific library
 
 
-#define SUSPENSION 10000
+#define SUSPENSION 5000
 #define TASK_TOTAL_COUNT 6
 #define MAX_STR_BUF_LEN 20
 #define BATTERY_LIMIT 40
@@ -260,7 +260,7 @@ void initialize(){
    BPData bpData;
    bpData.bpRawBufPtr = &bloodPressureRawBuf[0];
    bpData.bpCorrectedBufPtr = &bloodPressureCorrectedBuf[0];
-   for (int i=0; i<8; i++){
+   for (int i=0; i<16; i++){
      bloodPressureCorrectedBuf[i] = (unsigned char*)malloc(MAX_STR_BUF_LEN);
    }
    bpData.bpOutOfRangePtr = &bpOutOfRange;
@@ -439,8 +439,18 @@ void deleteTask(TCB* task){
 
 void temperatureTask(void* data) {
   static unsigned long timer = 0;
+  char temporaryValue = 0;
   if (timer != 0 && (millis() - timer) < SUSPENSION) {
-    return;
+   // Regardless, we still need to do the warning
+   TemperatureData* temperatureData = (TemperatureData*)data;
+   requestAndReceive((char*)&(temperatureData->tempRawBufPtr[tempCount]),sizeof(unsigned int), (char*)(temperatureData->tempOutOfRangePtr),sizeof(unsigned char), ALARM_TASK , TEMP_RAW_SUBTASK );
+   requestAndReceive((char*)&(temperatureData->tempRawBufPtr[tempCount]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , TEMP_RAW_SUBTASK );
+   if (temporaryValue==0){
+    *(temperatureData->tempHighPtr) = FALSE;
+   }else{
+    *(temperatureData->tempHighPtr) = TRUE;
+   }
+   return;
   }
   Serial.print("\nTemperature Measurement Starts\n");
   timer = millis();
@@ -451,11 +461,25 @@ void temperatureTask(void* data) {
     Serial.print(temperatureRawBuf[iii]);
     Serial.print(",");    
   }
+   Serial.print("\n-----\n");
   double tempCorrDump;
   requestAndReceive((char*)&(temperatureData->tempRawBufPtr[tempCount]),sizeof(unsigned int),
   (char*)&tempCorrDump, sizeof(double), COMPUTE_TASK, TEMP_RAW_SUBTASK);
   dtostrf(tempCorrDump, 1, 2, (char*)(temperatureData->tempCorrectedBufPtr[(tempCount + 1)%8]));
   tempCount = (tempCount + 1) % 8;
+   for (int iii = 0; iii< 8; iii++){
+    Serial.print(strlen((const char*)tempCorrectedBuf[iii]));
+    Serial.print("*");    
+  }
+   Serial.print("\n");
+  // warning and alarm
+  requestAndReceive((char*)&(temperatureData->tempRawBufPtr[tempCount]),sizeof(unsigned int), (char*)(temperatureData->tempOutOfRangePtr),sizeof(unsigned char), ALARM_TASK , TEMP_RAW_SUBTASK );
+  requestAndReceive((char*)&(temperatureData->tempRawBufPtr[tempCount]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , TEMP_RAW_SUBTASK );
+  if (temporaryValue==0){
+   *(temperatureData->tempHighPtr) = FALSE;
+  }else{
+   *(temperatureData->tempHighPtr) = TRUE;
+  }
   Serial.print("Temperature Measurement Complete\n");
   return;
 }
@@ -463,8 +487,36 @@ void temperatureTask(void* data) {
 
 void bloodPressureTask(void* data) {
   static unsigned long timer = 0;
+  char temporaryValue = 0;
   if (timer != 0 && (millis() - timer) < SUSPENSION) {
-    return;
+   // Regardless, we still need to do the warning
+   BPData* bloodPressureData = (BPData*)data;
+   Bool sysWarnResult;
+   char sysAlarmResult;
+   // two blood pressure types' two stuffs
+   requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount]),sizeof(unsigned int), (char*)&sysAlarmResult,sizeof(unsigned char), ALARM_TASK , SYSTO_RAW_SUBTASK );
+   requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , SYSTO_RAW_SUBTASK );
+   if (temporaryValue==0){
+     sysWarnResult = FALSE;
+   }else{
+     sysWarnResult = TRUE;
+   }
+   Bool diasWarnResult;
+   char diasAlarmResult;
+   requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount+8]),sizeof(unsigned int), (char*)&diasAlarmResult,sizeof(unsigned char), ALARM_TASK , DIASTO_RAW_SUBTASK );
+   requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount+8]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , DIASTO_RAW_SUBTASK );
+   if (temporaryValue==0){
+    diasWarnResult = FALSE;
+   }else{
+    diasWarnResult = TRUE;
+   }
+   *(bloodPressureData->bpOutOfRangePtr) = sysAlarmResult || diasAlarmResult;
+   if (sysWarnResult == FALSE && diasWarnResult == FALSE){
+     *(bloodPressureData->bpHighPtr) = FALSE;
+   }else{
+     *(bloodPressureData->bpHighPtr) = TRUE;
+   }
+   return;
   }
   Serial.print("\nBloodPressure Measurement Starts\n");
   timer = millis();
@@ -491,14 +543,50 @@ void bloodPressureTask(void* data) {
   (char*)&bpDiastoCorrDump, sizeof(double), COMPUTE_TASK, DIASTO_RAW_SUBTASK);
   dtostrf(bpDiastoCorrDump, 1, 2, (char*)(bloodPressureData->bpCorrectedBufPtr[((bpCount + 1) % 8) +8]));
   bpCount = (bpCount + 1) % 8;
+  // warning and alarm 
+  Bool sysWarnResult;
+  char sysAlarmResult;
+  // two blood pressure types' two stuffs
+  requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount]),sizeof(unsigned int), (char*)&sysAlarmResult,sizeof(unsigned char), ALARM_TASK , SYSTO_RAW_SUBTASK );
+  requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , SYSTO_RAW_SUBTASK );
+  if (temporaryValue==0){
+    sysWarnResult = FALSE;
+  }else{
+    sysWarnResult = TRUE;
+  }
+  Bool diasWarnResult;
+  char diasAlarmResult;
+  requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount+8]),sizeof(unsigned int), (char*)&diasAlarmResult,sizeof(unsigned char), ALARM_TASK , DIASTO_RAW_SUBTASK );
+  requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount+8]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , DIASTO_RAW_SUBTASK );
+  if (temporaryValue==0){
+   diasWarnResult = FALSE;
+  }else{
+   diasWarnResult = TRUE;
+  }
+  *(bloodPressureData->bpOutOfRangePtr) = sysAlarmResult || diasAlarmResult;
+  if (sysWarnResult == FALSE && diasWarnResult == FALSE){
+    *(bloodPressureData->bpHighPtr) = FALSE;
+  }else{
+    *(bloodPressureData->bpHighPtr) = TRUE;
+  }
   Serial.print("Blood Pressure Measurement Complete\n");
   return;
 }
 
 void pulseRateTask(void* data) {
   static unsigned long timer = 0;
+  char temporaryValue = 0;
   if (timer != 0 && (millis() - timer) < SUSPENSION) {
-    return;
+   // Regardless, we still need to do the warning
+   PRData* pulseRateData = (PRData*)data;
+   requestAndReceive((char*)&(pulseRateData->prRawBufPtr[prCount]),sizeof(unsigned int), (char*)(pulseRateData->pulseOutOfRangePtr),sizeof(unsigned char), ALARM_TASK , PULSE_RAW_SUBTASK  );
+   requestAndReceive((char*)&(pulseRateData->prRawBufPtr[prCount]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , PULSE_RAW_SUBTASK  );
+   if (temporaryValue==0){
+    *(pulseRateData->pulseLowPtr) = FALSE;
+   }else{
+    *(pulseRateData->pulseLowPtr) = TRUE;
+   }
+   return;
   }
   timer = millis();
   Serial.print("\nPulseRate Measurement Starts\n");
@@ -515,6 +603,14 @@ void pulseRateTask(void* data) {
   (char*)&prCorrDump, sizeof(unsigned int), COMPUTE_TASK, PULSE_RAW_SUBTASK);
   dtostrf(prCorrDump, 1, 2, (char*)(pulseRateData->prCorrectedBufPtr[(prCount + 1)%8]));
   prCount = (prCount + 1) % 8;
+  
+  requestAndReceive((char*)&(pulseRateData->prRawBufPtr[prCount]),sizeof(unsigned int), (char*)(pulseRateData->pulseOutOfRangePtr),sizeof(unsigned char), ALARM_TASK , PULSE_RAW_SUBTASK  );
+  requestAndReceive((char*)&(pulseRateData->prRawBufPtr[prCount]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , PULSE_RAW_SUBTASK  );
+  if (temporaryValue==0){
+   *(pulseRateData->pulseLowPtr) = FALSE;
+  }else{
+   *(pulseRateData->pulseLowPtr) = TRUE;
+  }
   Serial.print("Pulse Rate Measurement Complete\n");
   return;
 }
@@ -543,13 +639,13 @@ void statusTask(void* data){
      return;
    }
    timer = millis();
-   Serial.print("For Status--- B=");
+   Serial.print("For Status--- \n");
    StatusData* statusData = (StatusData*)data;
    requestAndReceive((char*)(statusData->batteryState),sizeof(unsigned short), (char*)(statusData->batteryState),sizeof(unsigned short), STATUS_TASK , STATUS_TASK );
    if (*(statusData->batteryState)==0){
     *(statusData->batteryState) = FULL_BATTERY;  // Magical Recharge
    }
-   Serial.println(" Finished");
+   Serial.println(" Finished\n");
    return;
 }
 
