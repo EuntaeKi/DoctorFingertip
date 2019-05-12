@@ -645,7 +645,7 @@ void warningAlarmTask(void* data){
 * function inputs: a pointer to the DisplayData
 * function outputs: None
 * function description: This function will display
-* 						all the data in Mega onto TFT
+*             all the data in Mega onto TFT
 * author: Matt & Sabrina
 ******************************************/ 
 void displayTask(void* data){
@@ -694,12 +694,12 @@ void executeTCB(TCB* taskControlBlock){
 /******************************************
 * function name: requestAndReceive
 * function inputs:  char* to set input buffer,
-*					char to represent input buffer length
-*					char* for output buffer,
-*					char to represent output buffer length
-* 					char to represent task type,
-*					and char to represent which variable to
-*					perform task on.
+*         char to represent input buffer length
+*         char* for output buffer,
+*         char to represent output buffer length
+*           char to represent task type,
+*         and char to represent which variable to
+*         perform task on.
 * function outputs: None
 * function description: This function will setup
 *                       the communication between
