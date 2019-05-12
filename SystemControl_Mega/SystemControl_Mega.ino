@@ -5,6 +5,7 @@
 
 
 #define SUSPENSION 5000
+#define KEYPAD_SCAN_INTERVAL 20
 #define TASK_TOTAL_COUNT 6
 #define MAX_STR_BUF_LEN 20
 #define BATTERY_LIMIT 40
@@ -22,6 +23,10 @@
 #define SYS_PRESS_DISP_WIDTH 3
 #define DIAS_PRESS_DISP_WIDTH 6
 #define PULSE_PRESS_DISP_WIDTH 3
+#define TEMP_SCEHDULED 1
+#define SYSTO_SCHEDULED 2
+#define DIASTO_SCHEDULED 4
+#define PULSE_SCHEDULED 8
 #define LCD_CS A3 // Chip Select goes to Analog 3
 #define LCD_CD A2 // Command/Data goes to Analog 2
 #define LCD_WR A1 // LCD Write goes to Analog 1
@@ -52,38 +57,57 @@ typedef struct TCB
    struct TCB* prev;
 } TCB;
 
-typedef struct 
+
+//MeasureData Struct
+typedef struct
 {
   unsigned int* tempRawBufPtr;
+  unsigned int* bpRawBufPtr;
+  unsigned int* prRawBufPtr;
+  unsigned int* measurementSelectionPtr;  
+} MeasureData; 
+
+
+typedef struct
+{
+  unsigned int* tempRawBufPtr;
+  unsigned int* bpRawBufPtr;
+  unsigned int* prRawBufPtr;
   unsigned char** tempCorrectedBufPtr;
+  unsigned char** bpCorrectedBufPtr;
+  unsigned char** prCorrectedBufPtr;  
+} ComputeData; 
+
+
+typedef struct
+{
+  unsigned int* tempRawBufPtr;
+  unsigned int* bpRawBufPtr;
+  unsigned int* prRawBufPtr;
+  unsigned short* batteryState;
+  unsigned char* bpOutOfRange;
   unsigned char* tempOutOfRangePtr;
   Bool* tempHighPtr;
-} TemperatureData;
-
-typedef struct 
-{
-  unsigned int* bpRawBufPtr;
-  unsigned char** bpCorrectedBufPtr;
   unsigned char* bpOutOfRangePtr;
   Bool* bpHighPtr;
-} BPData;
-
-typedef struct 
-{
-  unsigned int* prRawBufPtr;
-  unsigned char** prCorrectedBufPtr;
   unsigned char* pulseOutOfRangePtr;
   Bool* pulseLowPtr;
-} PRData;
+} WarningAlarmData;
+
 
 //DisplayData
 typedef struct
 {
-  TemperatureData* tempData;
-  BPData* bpData;
-  PRData* prData;
+  unsigned char** tempCorrectedBufPtr;
+  unsigned char** bpCorrectedBufPtr;
+  unsigned char** prCorrectedBufPtr;  
   unsigned short* batteryState;
+  WarningAlarmData* warnData;
 }  DisplayData;
+
+
+//Keypad Data
+dasdasdsads
 
 // StatusData
 typedef struct
@@ -101,12 +125,13 @@ typedef struct
 
 // function headers
 // major functions
-void initialization();
+void startUpTask();
 void scheduleTask(void* data);
 // task functions
-void temperatureTask(void* data);
-void bloodPressureTask(void* data);
-void pulseRateTask(void* data);
+void measureTask(void* data);
+void computeTask(void* data);
+void warningAlarmTask(void* data);
+void keypadTask(void* data);
 void displayTask(void* data);
 void statusTask(void* data);
 // Intrasystem Communication functions
@@ -121,17 +146,20 @@ Elegoo_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 
 
 // Global Variables for Measurements
+Remember Comput's Initial Value
 unsigned int temperatureRawBuf[8] = {75,0,0,0,0,0,0,0};
 unsigned int bloodPressureRawBuf[16] = {80,0,0,0,0,0,0,0,80,0,0,0,0,0,0,0};
 unsigned int pulseRateRawBuf[8] = {0,0,0,0,0,0,0,0};
+unsigned int measurementSelection = 0; // this is using a bit mask capability. See MeasureTask function for detail 
 // Global Variables for Display
 unsigned char* tempCorrectedBuf[8];
 unsigned char* bloodPressureCorrectedBuf[16];
 unsigned char* pulseRateCorrectedBuf[8];
 // Global Variables for Function Counter
-unsigned char tempCount = 0;
-unsigned char bpCount = 0;
-unsigned char prCount = 0;
+unsigned char freshTempCursor = 0;
+unsigned char freshSBPCursor = 0;
+unsigned char freshDBPCursor = 8;
+unsigned char freshPulseCursor = 0;
 // Global Variables for Status
 unsigned short batteryState = FULL_BATTERY;
 // Global Variables for Alarm
@@ -143,12 +171,16 @@ Bool bpHigh = FALSE;
 Bool tempHigh = FALSE;
 Bool pulseLow = FALSE;
 //Global variables for all possible tasks
-TCB* temperatureTCB;
-TCB* bloodPressureTCB;
-TCB* pulseRateTCB;
-TCB* displayTCB;
-TCB* statusTCB;
-SchedulerData* schedulerTaskQueue;
+TCB* measureTCB = NULL;
+TCB* computeTCB = NULL;
+TCB* warningAlarmTCB = NULL;
+TCB* keypadTCB = NULL;
+TCB* displayTCB = NULL;
+TCB* statusTCB = NULL;
+//Global variables for task queue management
+SchedulerData* schedulerTaskQueue = NULL;
+unsigned char addComputeTaskFlag = 2; // 0 for delete 1 for add, above means neutral so boldly incrementing is fine (^o^)
+unsigned long timeElapsed = 0;
 
 
 /******************************************
@@ -178,7 +210,7 @@ void setup()
 ******************************************/ 
 void loop()
 {
- initialize();
+ startUpTask();
  return;
 }
 
@@ -191,7 +223,8 @@ void loop()
 *                       the scheduler
 * author: Matt & Sabrina
 ******************************************/ 
-void initialize(){   
+void startUpTask(){   
+   noInterrupts();
    //Setup the TFT display
    tft.reset();
    uint16_t identifier = tft.readID();
@@ -236,68 +269,81 @@ void initialize(){
    tft.setTextColor(GOOD_DATA_COLOR); 
    tft.setTextSize(2);
    // Prepare for each task Each Tasks
-   // 1. Temperature
+   // 1. Measure
    // Data:
-   TemperatureData temperatureData;
-   temperatureData.tempRawBufPtr = &temperatureRawBuf[0];
-   temperatureData.tempCorrectedBufPtr = &tempCorrectedBuf[0];
+   MeasureData measureData;
+   measureData.temRawBufPtr = &temperatureRawBuf[0];
+   measureData.bpRawBufPtr = &bloodPressureRawBuf[0];;
+   measureData.prRawBufPtr = &pulseRateRawBuf[0];
+   measureData.measurementSelectionPtr = &measurementSelectionPtr;
+   freshTempCursor = 0;
+   freshSBPCursor = 0;
+   freshDBPCursor = 8;
+   freshPulseCursor = 0;
+   //TCB:
+   TCB measureTCBlock;
+   measureTCBlock.taskDataPtr = (void*)&measureData;
+   measureTCBlock.myTask = measureTask;
+   measureTCBlock.next = NULL;
+   measureTCBlock.prev = NULL;
+   measureTCB = &measureTCBlock;
+
+
+   // 2. Compute
+   // Data:
+   ComputeData computeData;
+   computeData.temRawBufPtr = &temperatureRawBuf[0];
+   computeData.bpRawBufPtr = &bloodPressureRawBuf[0];
+   computeData.prRawBufPtr = &pulseRateRawBuf[0];
+   computeData.tempCorrectedBufPtr = &tempCorrectedBuf[0];
+   computeData.bpCorrectedBufPtr = &bloodPressureCorrectedBuf[0];
+   computeData.prCorrectedBufPtr = &pulseRateCorrectedBuf[0];
    for (int i=0; i<8; i++){
      tempCorrectedBuf[i] = (unsigned char*)malloc(MAX_STR_BUF_LEN);
    }
-   temperatureData.tempOutOfRangePtr = &tempOutOfRange;
-   temperatureData.tempHighPtr = &tempHigh;
-   
-   // TCB:
-   TCB temperatureTaskControlBlock;
-   temperatureTaskControlBlock.myTask = temperatureTask;
-   temperatureTaskControlBlock.taskDataPtr = (void*)&temperatureData;
-   temperatureTaskControlBlock.next = NULL;
-   temperatureTaskControlBlock.prev = NULL;
-   temperatureTCB = &temperatureTaskControlBlock;
-   
-   // 2. BloodPressure
-   // data:
-   BPData bpData;
-   bpData.bpRawBufPtr = &bloodPressureRawBuf[0];
-   bpData.bpCorrectedBufPtr = &bloodPressureCorrectedBuf[0];
    for (int i=0; i<16; i++){
      bloodPressureCorrectedBuf[i] = (unsigned char*)malloc(MAX_STR_BUF_LEN);
    }
-   bpData.bpOutOfRangePtr = &bpOutOfRange;
-   bpData.bpHighPtr = &bpHigh;
-   // TCB:
-   TCB bpTaskControlBlock;
-   bpTaskControlBlock.myTask = bloodPressureTask;
-   bpTaskControlBlock.taskDataPtr = (void*)&bpData;
-   bpTaskControlBlock.next = NULL;
-   bpTaskControlBlock.prev = NULL;
-   bloodPressureTCB = &bpTaskControlBlock;
-   
-   // 3. Pulse Rate
-   // data:
-   PRData prData;
-   prData.prRawBufPtr = &pulseRateRawBuf[0];
-   prData.prCorrectedBufPtr = &pulseRateCorrectedBuf[0];
    for (int i=0; i<8; i++){
      pulseRateCorrectedBuf[i] = (unsigned char*)malloc(MAX_STR_BUF_LEN);
    }
-   prData.pulseOutOfRangePtr = &pulseOutOfRange;
-   prData.pulseLowPtr = &pulseLow;
+   //TCB
+   TCB computeTCBlock;
+   computeTCBlock.taskDataPtr = (void*)&computeData;
+   computeTCBlock.myTask = computeTask;
+   computeTCBlock.next = NULL;
+   computeTCBlock.prev = NULL;
+   computeTCB = &computeTCBlock;
+
+
+   // 3. Warning Alrm Data
+   WarningAlarmData; warningAlarmData;;
+   warningAlarmData.temRawBufPtr = &temperatureRawBuf[0];
+   warningAlarmData.bpRawBufPtr = &bloodPressureRawBuf[0];
+   warningAlarmData.prRawBufPtr = &pulseRateRawBuf[0];
+   warningAlarmData.tempOutOfRangePtr = &tempOutOfRange;
+   warningAlarmData.tempHighPtr = &tempHigh;
+   warningAlarmData.bpOutOfRangePtr = &bpOutOfRange;
+   warningAlarmData.bpHighPtr = &bpHigh;
+   warningAlarmData.pulseOutOfRangePtr = &pulseOutOfRange;
+   warningAlarmData.pulseLowPtr = &pulseLow;
+   warningAlarmData.batteryState = &batteryState;
    // TCB:
-   TCB prTaskControlBlock;
-   prTaskControlBlock.myTask = pulseRateTask;
-   prTaskControlBlock.taskDataPtr = (void*)&prData;
-   prTaskControlBlock.next = NULL;
-   prTaskControlBlock.prev = NULL;
-   pulseRateTCB = &prTaskControlBlock;
+   TCB warningAlarmTCBlock;
+   warningAlarmTCBlock.myTask = warningAlarmTask;
+   warningAlarmTCBlock.taskDataPtr = (void*)&warningAlarmData;
+   warningAlarmTCBlock.next = NULL;
+   warningAlarmTCBlock.prev = NULL;
+   warningAlarmTCB = &warningAlarmTCBlock;
    
     // 4. Display
    // data:
    DisplayData displayData;
-   displayData.tempData =&temperatureData;
-   displayData.bpData = &bpData;
-   displayData.prData = &prData;
+   displayData.tempCorrectedBufPtr = &tempCorrectedBuf[0];
+   displayData.bpCorrectedBufPtr = &bloodPressureCorrectedBuf[0];
+   displayData.prCorrectedBufPtr = &pulseRateCorrectedBuf[0];
    displayData.batteryState = &batteryState;
+   displayData.warnData = &warningAlarmTCBlock;
    // TCB:
    TCB displayTaskControlBlock;
    displayTaskControlBlock.myTask = displayTask;
@@ -331,13 +377,21 @@ void initialize(){
    // Insert the basic TCBs in
    insertTask(statusTCB);
    insertTask(displayTCB);
-   insertTask(temperatureTCB);
-   insertTask(bloodPressureTCB);
-   insertTask(pulseRateTCB);
+   insertTask(measureTCB);
+   insertTask(warningAlarmTCB);
+
+   // Get the timer started
+   // Enable timer2 interrupt
+   TIMSK2 = (TIMSK2 & B11111110) | 0x01;
    
    // Start the scheduler task
    executeTCB(&scheduleTaskControlBlock);
    return;
+}
+
+// Timer2 overflow ISR. It will increment our timer by 1 everytime it interrupts. representing 1 millisec
+ISR(TIMER2_OVF_vect){
+   timeElapsed = timeElapsed + 1;
 }
 
 
@@ -355,6 +409,19 @@ void scheduleTask(void* data){
    TCB* currTask = schedulerData->head;
    // forever execute each task
    while(1){
+    // check if we need to add the compute 
+    if (addComputeTaskFlag == 0){
+      // compute task is completed and we can remove it now.
+      deleteTask(computeTCB);  // deleteTask has protection and check if computeTCB is removed already.
+    }else if (addComputeTaskFlag == 1){
+      // compute task has been added and scheduled by measureTask. add it in
+      insertTask(computeTCB);
+      // increment the flag to be neutral
+      addComputeTaskFlag++;
+    } else {
+      // neutral state
+      // we have already added a compute task. don't add it again. wait for it to finish.
+    }
     if (currTask ==  NULL){
       // at the end or nothing. go back to head, or spin forever
       currTask = schedulerData->head;
@@ -363,9 +430,9 @@ void scheduleTask(void* data){
       executeTCB(currTask);
       // move on
       currTask = currTask->next;
-      // future addition for the TFT touch screen
-      //???????????????????????
     }
+    // execute the keypad task (let the keypad task figure out its timer)
+    //???????????????????????
    }
    return;
 }
@@ -437,118 +504,109 @@ void deleteTask(TCB* task){
   task->prev = NULL;
 }
 
-void temperatureTask(void* data) {
-  static unsigned long timer = 0;
-  char temporaryValue = 0;
-  if (timer != 0 && (millis() - timer) < SUSPENSION) {
-   // Regardless, we still need to do the warning
-   TemperatureData* temperatureData = (TemperatureData*)data;
-   requestAndReceive((char*)&(temperatureData->tempRawBufPtr[tempCount]),sizeof(unsigned int), (char*)(temperatureData->tempOutOfRangePtr),sizeof(unsigned char), ALARM_TASK , TEMP_RAW_SUBTASK );
-   requestAndReceive((char*)&(temperatureData->tempRawBufPtr[tempCount]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , TEMP_RAW_SUBTASK );
-   if (temporaryValue==0){
-    *(temperatureData->tempHighPtr) = FALSE;
-   }else{
-    *(temperatureData->tempHighPtr) = TRUE;
+void measureTask(void* data){
+   // TIMING MECH
+   static unsigned long timer = 0;
+   if (timer!=0 && (timeElapsed-timer)<SUSPENSION){
+     return;
    }
-   return;
-  }
-  Serial.print("\nTemperature Measurement Starts\n");
-  timer = millis();
-  TemperatureData* temperatureData = (TemperatureData*)data;
-  requestAndReceive((char*)&(temperatureData->tempRawBufPtr[tempCount]), sizeof(unsigned int), 
-  (char*)&(temperatureData->tempRawBufPtr[(tempCount + 1)%8]),sizeof(unsigned int), MEASURE_TASK, TEMP_RAW_SUBTASK);
-  for (int iii = 0; iii< 8; iii++){
-    Serial.print(temperatureRawBuf[iii]);
-    Serial.print(",");    
-  }
-   Serial.print("\n-----\n");
-  double tempCorrDump;
-  requestAndReceive((char*)&(temperatureData->tempRawBufPtr[tempCount]),sizeof(unsigned int),
-  (char*)&tempCorrDump, sizeof(double), COMPUTE_TASK, TEMP_RAW_SUBTASK);
-  dtostrf(tempCorrDump, 1, 2, (char*)(temperatureData->tempCorrectedBufPtr[(tempCount + 1)%8]));
-  tempCount = (tempCount + 1) % 8;
-   for (int iii = 0; iii< 8; iii++){
-    Serial.print(strlen((const char*)tempCorrectedBuf[iii]));
-    Serial.print("*");    
-  }
-   Serial.print("\n");
-  // warning and alarm
-  requestAndReceive((char*)&(temperatureData->tempRawBufPtr[tempCount]),sizeof(unsigned int), (char*)(temperatureData->tempOutOfRangePtr),sizeof(unsigned char), ALARM_TASK , TEMP_RAW_SUBTASK );
-  requestAndReceive((char*)&(temperatureData->tempRawBufPtr[tempCount]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , TEMP_RAW_SUBTASK );
-  if (temporaryValue==0){
-   *(temperatureData->tempHighPtr) = FALSE;
-  }else{
-   *(temperatureData->tempHighPtr) = TRUE;
-  }
-  Serial.print("Temperature Measurement Complete\n");
-  return;
+   // It is our turn.
+   timer = timeElapsed;
+   Serial.print("\nMeasureTask Starts\n");
+   MeasureData* mData = (MeasureData*)data;
+   unsigned int selections = *(mData->measurementSelectionPtr)
+   // run the measurement that has been scheduled.
+   if (selections & TEMP_SCEHDULED){
+     // measure temperature
+     unsigned char oldTempCursor = freshTempCursor;
+     freshTempCursor = (freshTempCursor + 1)%8;
+     requestAndReceive((char*)&(mData->tempRawBufPtr[oldTempCursor]), sizeof(unsigned int), 
+     (char*)&(mData->tempRawBufPtr[freshTempCursor]),sizeof(unsigned int), MEASURE_TASK, TEMP_RAW_SUBTASK);
+   }
+   if (selections & SYSTO_SCHEDULED ){
+     // Measure Systolic
+     unsigned char oldSBPCursor  = freshSBPCursor ;
+     freshSBPCursor  = (freshSBPCursor  + 1)%8;
+     requestAndReceive((char*)&(mData->bpRawBufPtr[oldSBPCursor]), sizeof(unsigned int), 
+     (char*)&(mData->bpRawBufPtr[freshSBPCursor]), sizeof(unsigned int), MEASURE_TASK, SYSTO_RAW_SUBTASK);
+   } 
+   if (selections & DIASTO_SCHEDULED ){
+     // Measure Diastolic
+     unsigned char oldDBPCursor  = freshDBPCursor ;
+     freshDBPCursor  = ((freshDBPCursor + 1) % 8) +8
+     requestAndReceive((char*)&(mData->bpRawBufPtr[oldDBPCursor]), sizeof(unsigned int), 
+     (char*)&(mData->bpRawBufPtr[freshDBPCursor]), sizeof(unsigned int), MEASURE_TASK, DIASTO_RAW_SUBTASK);
+   } 
+   if (selections & PULSE_SCHEDULED ){
+     // Measure Pulse rate
+     unsigned char oldPulseCursor  = freshPulseCursor ;
+     freshPulseCursor  = (freshPulseCursor + 1)%8;
+     requestAndReceive((char*)&(mData->prRawBufPtr[oldPulseCursor]), sizeof(unsigned int), 
+     (char*)&(mData->prRawBufPtr[freshPulseCursor),sizeof(unsigned int), MEASURE_TASK, PULSE_RAW_SUBTASK);
+   }
+   // Wrap up. clear the selections. notify that the compute task needs to be scheduled
+   *(mData->measurementSelectionPtr) = 0;
+   addComputeTaskFlag++;  // just add one. repetition has been delt with.
+   Serial.print("MeasureTask Completes\n");
+   return; // get out
 }
 
 
-void bloodPressureTask(void* data) {
-  static unsigned long timer = 0;
+void computeTask(void* data){
+   // TIMING MECH
+   static unsigned long timer = 0;
+   if (timer!=0 && (timeElapsed-timer)<SUSPENSION){
+     return;
+   }
+   // It is our turn. do the compute. Then tell the scheduler to remove us
+   timer = timeElapsed;
+   Serial.print("\nComputeTask Starts\n");
+   ComputeData* cData = (ComputeData*)data;
+   // compute temp
+   double tempCorrDump;
+   requestAndReceive((char*)&(cData->tempRawBufPtr[freshTempCursor]),sizeof(unsigned int),
+   (char*)&tempCorrDump, sizeof(double), COMPUTE_TASK, TEMP_RAW_SUBTASK);
+   dtostrf(tempCorrDump, 1, 2, (char*)(cData->tempCorrectedBufPtr[freshTempCursor]));
+   // compute systo
+   unsigned int systoCorrDump;
+   requestAndReceive((char*)&(cData->bpRawBufPtr[freshSBPCursor]),sizeof(unsigned int),
+   (char*)&systoCorrDump, sizeof(unsigned int), COMPUTE_TASK, SYSTO_RAW_SUBTASK);
+   sprintf((char*)(cData->bpCorrectedBufPtr[freshSBPCursor]), "%d", systoCorrDump);
+   //compute diasto
+   double bpDiastoCorrDump;
+   requestAndReceive((char*)&(cData->bpRawBufPtr[freshDBPCursor]),sizeof(unsigned int),
+   (char*)&bpDiastoCorrDump, sizeof(double), COMPUTE_TASK, DIASTO_RAW_SUBTASK);
+   dtostrf(bpDiastoCorrDump, 1, 2, (char*)(cData->bpCorrectedBufPtr[freshDBPCursor]));
+   //compute pulse
+   unsigned int prCorrDump;
+   requestAndReceive((char*)&(cData->prRawBufPtr[freshTempCursor ]),sizeof(unsigned int),
+   (char*)&prCorrDump, sizeof(unsigned int), COMPUTE_TASK, PULSE_RAW_SUBTASK);
+   dtostrf(prCorrDump, 1, 2, (char*)(cData->prCorrectedBufPtr[freshTempCursor]));
+   // done. now suicide
+   addComputeTaskFlag = 0;
+   Serial.print("nComputeTask Completes\n");
+   return; // getout
+}
+
+void warningAlarmTask(void* data){
+  // no timer is needed
+  WarningAlarmData* wData = (WarningAlarmData*)data;
+  // temp store
   char temporaryValue = 0;
-  if (timer != 0 && (millis() - timer) < SUSPENSION) {
-   // Regardless, we still need to do the warning
-   BPData* bloodPressureData = (BPData*)data;
-   Bool sysWarnResult;
-   char sysAlarmResult;
-   // two blood pressure types' two stuffs
-   requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount]),sizeof(unsigned int), (char*)&sysAlarmResult,sizeof(unsigned char), ALARM_TASK , SYSTO_RAW_SUBTASK );
-   requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , SYSTO_RAW_SUBTASK );
-   if (temporaryValue==0){
-     sysWarnResult = FALSE;
-   }else{
-     sysWarnResult = TRUE;
-   }
-   Bool diasWarnResult;
-   char diasAlarmResult;
-   requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount+8]),sizeof(unsigned int), (char*)&diasAlarmResult,sizeof(unsigned char), ALARM_TASK , DIASTO_RAW_SUBTASK );
-   requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount+8]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , DIASTO_RAW_SUBTASK );
-   if (temporaryValue==0){
-    diasWarnResult = FALSE;
-   }else{
-    diasWarnResult = TRUE;
-   }
-   *(bloodPressureData->bpOutOfRangePtr) = sysAlarmResult || diasAlarmResult;
-   if (sysWarnResult == FALSE && diasWarnResult == FALSE){
-     *(bloodPressureData->bpHighPtr) = FALSE;
-   }else{
-     *(bloodPressureData->bpHighPtr) = TRUE;
-   }
-   return;
+  // temp
+  requestAndReceive((char*)&(wData->tempRawBufPtr[freshTempCursor ]),sizeof(unsigned int), (char*)(wData->tempOutOfRangePtr),sizeof(unsigned char), ALARM_TASK , TEMP_RAW_SUBTASK );
+  requestAndReceive((char*)&(wData->tempRawBufPtr[freshTempCursor ]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , TEMP_RAW_SUBTASK );
+  if (temporaryValue==0){
+   *(wData->tempHighPtr) = FALSE;
+  }else{
+   *(wData->tempHighPtr) = TRUE;
   }
-  Serial.print("\nBloodPressure Measurement Starts\n");
-  timer = millis();
-  BPData* bloodPressureData = (BPData*)data;
-  // Measure Systolic
-  requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount]), sizeof(unsigned int), 
-  (char*)&(bloodPressureData->bpRawBufPtr[(bpCount + 1) % 8]), sizeof(unsigned int), MEASURE_TASK, SYSTO_RAW_SUBTASK);
-  // Measure Diastolic
-  requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount + 8]), sizeof(unsigned int), 
-  (char*)&(bloodPressureData->bpRawBufPtr[((bpCount + 1) % 8) +8]), sizeof(unsigned int), MEASURE_TASK, DIASTO_RAW_SUBTASK);
-  for (int iii = 0; iii< 16; iii++){
-    Serial.print(bloodPressureRawBuf[iii]);
-    Serial.print(",");    
-  }  
-  Serial.print("\n");
-  // Compute Systolic
-  unsigned int systoCorrDump;
-  requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount]),sizeof(unsigned int),
-  (char*)&systoCorrDump, sizeof(unsigned int), COMPUTE_TASK, SYSTO_RAW_SUBTASK);
-  sprintf((char*)(bloodPressureData->bpCorrectedBufPtr[(bpCount + 1) % 8]), "%d", systoCorrDump);
-  // Compute Diastolic
-  double bpDiastoCorrDump;
-  requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[((bpCount + 1) % 8) +8]),sizeof(unsigned int),
-  (char*)&bpDiastoCorrDump, sizeof(double), COMPUTE_TASK, DIASTO_RAW_SUBTASK);
-  dtostrf(bpDiastoCorrDump, 1, 2, (char*)(bloodPressureData->bpCorrectedBufPtr[((bpCount + 1) % 8) +8]));
-  bpCount = (bpCount + 1) % 8;
-  // warning and alarm 
+  // blood pressure
   Bool sysWarnResult;
   char sysAlarmResult;
   // two blood pressure types' two stuffs
-  requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount]),sizeof(unsigned int), (char*)&sysAlarmResult,sizeof(unsigned char), ALARM_TASK , SYSTO_RAW_SUBTASK );
-  requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , SYSTO_RAW_SUBTASK );
+  requestAndReceive((char*)&(wData->bpRawBufPtr[freshSBPCursor]),sizeof(unsigned int), (char*)&sysAlarmResult,sizeof(unsigned char), ALARM_TASK , SYSTO_RAW_SUBTASK );
+  requestAndReceive((char*)&(wData->bpRawBufPtr[freshSBPCursor]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , SYSTO_RAW_SUBTASK );
   if (temporaryValue==0){
     sysWarnResult = FALSE;
   }else{
@@ -556,64 +614,30 @@ void bloodPressureTask(void* data) {
   }
   Bool diasWarnResult;
   char diasAlarmResult;
-  requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount+8]),sizeof(unsigned int), (char*)&diasAlarmResult,sizeof(unsigned char), ALARM_TASK , DIASTO_RAW_SUBTASK );
-  requestAndReceive((char*)&(bloodPressureData->bpRawBufPtr[bpCount+8]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , DIASTO_RAW_SUBTASK );
+  requestAndReceive((char*)&(wData->bpRawBufPtr[freshDBPCursor]),sizeof(unsigned int), (char*)&diasAlarmResult,sizeof(unsigned char), ALARM_TASK , DIASTO_RAW_SUBTASK );
+  requestAndReceive((char*)&(wData->bpRawBufPtr[freshDBPCursor]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , DIASTO_RAW_SUBTASK );
   if (temporaryValue==0){
    diasWarnResult = FALSE;
   }else{
    diasWarnResult = TRUE;
   }
-  *(bloodPressureData->bpOutOfRangePtr) = sysAlarmResult || diasAlarmResult;
+  *(wData->bpOutOfRangePtr) = sysAlarmResult || diasAlarmResult;
   if (sysWarnResult == FALSE && diasWarnResult == FALSE){
-    *(bloodPressureData->bpHighPtr) = FALSE;
+    *(wData->bpHighPtr) = FALSE;
   }else{
-    *(bloodPressureData->bpHighPtr) = TRUE;
+    *(wData->bpHighPtr) = TRUE;
   }
-  Serial.print("Blood Pressure Measurement Complete\n");
-  return;
+  // pulse
+  requestAndReceive((char*)&(wData->prRawBufPtr[freshTempCursor ]),sizeof(unsigned int), (char*)(wData->pulseOutOfRangePtr),sizeof(unsigned char), ALARM_TASK , PULSE_RAW_SUBTASK  );
+  requestAndReceive((char*)&(wData->prRawBufPtr[freshTempCursor ]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , PULSE_RAW_SUBTASK  );
+  if (temporaryValue==0){
+   *(wData->pulseLowPtr) = FALSE;
+  }else{
+   *(wData->pulseLowPtr) = TRUE;
+  }
+  return; // done. get out
 }
 
-void pulseRateTask(void* data) {
-  static unsigned long timer = 0;
-  char temporaryValue = 0;
-  if (timer != 0 && (millis() - timer) < SUSPENSION) {
-   // Regardless, we still need to do the warning
-   PRData* pulseRateData = (PRData*)data;
-   requestAndReceive((char*)&(pulseRateData->prRawBufPtr[prCount]),sizeof(unsigned int), (char*)(pulseRateData->pulseOutOfRangePtr),sizeof(unsigned char), ALARM_TASK , PULSE_RAW_SUBTASK  );
-   requestAndReceive((char*)&(pulseRateData->prRawBufPtr[prCount]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , PULSE_RAW_SUBTASK  );
-   if (temporaryValue==0){
-    *(pulseRateData->pulseLowPtr) = FALSE;
-   }else{
-    *(pulseRateData->pulseLowPtr) = TRUE;
-   }
-   return;
-  }
-  timer = millis();
-  Serial.print("\nPulseRate Measurement Starts\n");
-  PRData* pulseRateData = (PRData*)data;
-  requestAndReceive((char*)&(pulseRateData->prRawBufPtr[prCount]), sizeof(unsigned int), 
-  (char*)&(pulseRateData->prRawBufPtr[(prCount + 1)%8]),sizeof(unsigned int), MEASURE_TASK, PULSE_RAW_SUBTASK);
-  for (int iii = 0; iii< 8; iii++){
-    Serial.print(pulseRateRawBuf[iii]);
-    Serial.print(",");    
-  }
-  Serial.print("\n");
-  unsigned int prCorrDump;
-  requestAndReceive((char*)&(pulseRateData->prRawBufPtr[prCount]),sizeof(unsigned int),
-  (char*)&prCorrDump, sizeof(unsigned int), COMPUTE_TASK, PULSE_RAW_SUBTASK);
-  dtostrf(prCorrDump, 1, 2, (char*)(pulseRateData->prCorrectedBufPtr[(prCount + 1)%8]));
-  prCount = (prCount + 1) % 8;
-  
-  requestAndReceive((char*)&(pulseRateData->prRawBufPtr[prCount]),sizeof(unsigned int), (char*)(pulseRateData->pulseOutOfRangePtr),sizeof(unsigned char), ALARM_TASK , PULSE_RAW_SUBTASK  );
-  requestAndReceive((char*)&(pulseRateData->prRawBufPtr[prCount]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , PULSE_RAW_SUBTASK  );
-  if (temporaryValue==0){
-   *(pulseRateData->pulseLowPtr) = FALSE;
-  }else{
-   *(pulseRateData->pulseLowPtr) = TRUE;
-  }
-  Serial.print("Pulse Rate Measurement Complete\n");
-  return;
-}
 
 
 /******************************************
@@ -633,12 +657,13 @@ void displayTask(void* data){
 
 
 void statusTask(void* data){
-   // check the timer to see if it is time to go
+    // TIMING MECH
    static unsigned long timer = 0;
-   if (timer!=0 && (millis()-timer)<SUSPENSION){
+   if (timer!=0 && (timeElapsed-timer)<SUSPENSION){
      return;
    }
-   timer = millis();
+   // It is our turn. get the status
+   timer = timeElapsed;
    Serial.print("For Status--- \n");
    StatusData* statusData = (StatusData*)data;
    requestAndReceive((char*)(statusData->batteryState),sizeof(unsigned short), (char*)(statusData->batteryState),sizeof(unsigned short), STATUS_TASK , STATUS_TASK );
