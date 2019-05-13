@@ -2,9 +2,10 @@
 #include <stdlib.h>
 #include <Elegoo_GFX.h>    // Core graphics library
 #include <Elegoo_TFTLCD.h> // Hardware-specific library
+#include <TouchScreen.h>   // Touch Screen for TFT
 
 
-#define SUSPENSION 5000
+#define SUSPENSION 2222
 #define KEYPAD_SCAN_INTERVAL 20
 #define TASK_TOTAL_COUNT 6
 #define MAX_STR_BUF_LEN 20
@@ -40,12 +41,23 @@
 #define MAGENTA 0xF81F
 #define YELLOW  0xFFE0
 #define WHITE   0xFFFF
-#define ORANGE  0xFCC0
+#define ORANGE  0xFE6D
 #define BACKGROUND_COLOR 0xFFFF
 #define STATIC_TEXT_COLOR 0x0000
 #define GOOD_DATA_COLOR 0x0700
 #define BAD_DATA_COLOR 0xF800
-
+#define BUTTON_W 130
+#define BUTTON_H 32
+#define MINPRESSURE 5 
+#define MAXPRESSURE 5000 
+#define YP A3 
+#define XM A2 
+#define YM 9 
+#define XP 8 
+#define TS_MINY 70
+#define TS_MAXY 920
+#define TS_MINX 120
+#define TS_MAXX 900
 
 enum _myBool { FALSE = 0, TRUE = 1 };
 typedef enum _myBool Bool;
@@ -66,7 +78,7 @@ typedef struct
   unsigned int* bpRawBufPtr;
   unsigned int* prRawBufPtr;
   unsigned int* measurementSelectionPtr; 
-  unsigned int* mCountPtr; 
+  unsigned char* mCountPtr; 
 } MeasureData; 
 
 
@@ -98,14 +110,14 @@ typedef struct
   unsigned int* systoColorPtr;
   unsigned int* diastoColorPtr;
   unsigned int* pulseColorPtr;
-  unsigned int* mCountPtr; 
+  unsigned char* mCountPtr; 
 } WarningAlarmData;
 
 
 //DisplayData
 typedef struct
 {
-  unsigned char** tempCorrectedBufPtr;
+   unsigned char** tempCorrectedBufPtr;
   unsigned char** bpCorrectedBufPtr;
   unsigned char** prCorrectedBufPtr;  
   unsigned short* batteryState;
@@ -114,6 +126,8 @@ typedef struct
   unsigned int* diastoColorPtr;
   unsigned int* pulseColorPtr;
   unsigned char* modeSelection;
+  unsigned int* measurementSelectionPtr;  
+  unsigned char* ackReceived;
 }  DisplayData;
 
 
@@ -160,23 +174,24 @@ void insertTask(TCB* task);
 void deleteTask(TCB* task);
 // TFT Related
 Elegoo_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
+TouchScreen ts = TouchScreen(XP, YP ,XM , YM, 300);
 
 
 
 // Globals for keypad and ack
 unsigned char ackReceived = 0;
 unsigned char mCount = 0; 
-unsigned char modeSelection = 0;  // 0 means annunciation   1 means menu
+unsigned char modeSelection = 1;  // 0 means menu   1 anounciation
 // Global Variables for Measurements
 unsigned int temperatureRawBuf[8] = {75,0,0,0,0,0,0,0};
 unsigned int bloodPressureRawBuf[16] = {80,0,0,0,0,0,0,0,80,0,0,0,0,0,0,0};
 unsigned int pulseRateRawBuf[8] = {0,0,0,0,0,0,0,0};
 unsigned int measurementSelection = 0; // this is using a bit mask capability. See MeasureTask function for detail 
 // Initial Values for Compute
-char* initialTempDisplay = "61.25";
-char* initialSystoDisplay = "169.00";
-char* initialDiastoDisplay = "126.00";
-char* initialPulseDisplay = "8";
+const char* initialTempDisplay = "61.25";
+const char* initialSystoDisplay = "169";
+const char* initialDiastoDisplay = "126.00";
+const char* initialPulseDisplay = "8";
 // Global Variables for Display
 unsigned char* tempCorrectedBuf[8];
 unsigned char* bloodPressureCorrectedBuf[16];
@@ -185,6 +200,9 @@ unsigned int tempColor = GREEN;
 unsigned int systoColor = GREEN;
 unsigned int diastoColor = GREEN;
 unsigned int pulseColor = GREEN;
+Elegoo_GFX_Button button[4];
+Elegoo_GFX_Button menuButton[4];
+Elegoo_GFX_Button ackButton;
 // Global Variables for Function Counter
 unsigned char freshTempCursor = 0;
 unsigned char freshSBPCursor = 0;
@@ -209,7 +227,7 @@ TCB* displayTCB = NULL;
 TCB* statusTCB = NULL;
 //Global variables for task queue management
 SchedulerData* schedulerTaskQueue = NULL;
-unsigned char addComputeTaskFlag = 2; // 0 for delete 1 for add, above means neutral so boldly incrementing is fine (^o^)
+unsigned char addComputeTaskFlag = 0; // 0 for delete 1 for add, above means neutral so boldly incrementing is fine (^o^)
 unsigned long timeElapsed = 0;
 
 
@@ -254,7 +272,6 @@ void loop()
 * author: Matt & Sabrina
 ******************************************/ 
 void startUpTask(){   
-   noInterrupts();
    //Setup the TFT display
    tft.reset();
    uint16_t identifier = tft.readID();
@@ -304,7 +321,7 @@ void startUpTask(){
    // 1. Measure
    // Data:
    MeasureData measureData;
-   measureData.temRawBufPtr = &temperatureRawBuf[0];
+   measureData.tempRawBufPtr = &temperatureRawBuf[0];
    measureData.bpRawBufPtr = &bloodPressureRawBuf[0];;
    measureData.prRawBufPtr = &pulseRateRawBuf[0];
    measureData.measurementSelectionPtr = &measurementSelection;
@@ -325,12 +342,12 @@ void startUpTask(){
    // 2. Compute
    // Data:
    ComputeData computeData;
-   computeData.temRawBufPtr = &temperatureRawBuf[0];
+   computeData.tempRawBufPtr = &temperatureRawBuf[0];
    computeData.bpRawBufPtr = &bloodPressureRawBuf[0];
    computeData.prRawBufPtr = &pulseRateRawBuf[0];
-   computeData.tempCorrectedBufPtr = &tempCorrectedBuf[0];
-   computeData.bpCorrectedBufPtr = &bloodPressureCorrectedBuf[0];
-   computeData.prCorrectedBufPtr = &pulseRateCorrectedBuf[0];
+   computeData.tempCorrectedBufPtr = tempCorrectedBuf;
+   computeData.bpCorrectedBufPtr = bloodPressureCorrectedBuf;
+   computeData.prCorrectedBufPtr = pulseRateCorrectedBuf;
    for (int i=0; i<8; i++){
      tempCorrectedBuf[i] = (unsigned char*)malloc(MAX_STR_BUF_LEN);
    }
@@ -340,10 +357,10 @@ void startUpTask(){
    for (int i=0; i<8; i++){
      pulseRateCorrectedBuf[i] = (unsigned char*)malloc(MAX_STR_BUF_LEN);
    }
-   strcpy(tempCorrectedBuf[0], initialTempDisplay);
-   strcpy(bloodPressureCorrectedBuf[0], initialSystoDisplay);
-   strcpy(bloodPressureCorrectedBuf[8], initialDiastoDisplay);
-   strcpy(pulseRateCorrectedBuf[0], initialPulseDisplay);
+   strcpy((char*)tempCorrectedBuf[0], initialTempDisplay);
+   strcpy((char*)bloodPressureCorrectedBuf[0], initialSystoDisplay);
+   strcpy((char*)bloodPressureCorrectedBuf[8], initialDiastoDisplay);
+   strcpy((char*)pulseRateCorrectedBuf[0], initialPulseDisplay);
 
    //TCB
    TCB computeTCBlock;
@@ -355,8 +372,8 @@ void startUpTask(){
 
 
    // 3. Warning Alrm Data
-   WarningAlarmData; warningAlarmData;;
-   warningAlarmData.temRawBufPtr = &temperatureRawBuf[0];
+   WarningAlarmData warningAlarmData;
+   warningAlarmData.tempRawBufPtr = &temperatureRawBuf[0];
    warningAlarmData.bpRawBufPtr = &bloodPressureRawBuf[0];
    warningAlarmData.prRawBufPtr = &pulseRateRawBuf[0];
    warningAlarmData.tempOutOfRangePtr = &tempOutOfRange;
@@ -369,7 +386,7 @@ void startUpTask(){
    warningAlarmData.ackReceived = &ackReceived;
    warningAlarmData.tempColorPtr = &tempColor;
    warningAlarmData.systoColorPtr = &systoColor;
-   warningAlarmData.diastoColorPtr = diastoColor;
+   warningAlarmData.diastoColorPtr = &diastoColor;
    warningAlarmData.pulseColorPtr = &pulseColor;
    warningAlarmData.mCountPtr = &mCount;
 
@@ -384,15 +401,18 @@ void startUpTask(){
     // 4. Display
    // data:
    DisplayData displayData;
-   displayData.tempCorrectedBufPtr = &tempCorrectedBuf[0];
-   displayData.bpCorrectedBufPtr = &bloodPressureCorrectedBuf[0];
-   displayData.prCorrectedBufPtr = &pulseRateCorrectedBuf[0];
+   displayData.tempCorrectedBufPtr = tempCorrectedBuf;
+   displayData.bpCorrectedBufPtr = bloodPressureCorrectedBuf;
+   displayData.prCorrectedBufPtr = pulseRateCorrectedBuf;
    displayData.batteryState = &batteryState;
    displayData.tempColorPtr = &tempColor;
    displayData.systoColorPtr = &systoColor;
-   displayData.diastoColorPtr = diastoColor;
+   displayData.diastoColorPtr = &diastoColor;
    displayData.pulseColorPtr = &pulseColor;
    displayData.modeSelection = &modeSelection;
+   displayData.measurementSelectionPtr = &measurementSelection;  
+   displayData.ackReceived = &ackReceived;
+
    // TCB:
    TCB displayTaskControlBlock;
    displayTaskControlBlock.myTask = displayTask;
@@ -400,6 +420,20 @@ void startUpTask(){
    displayTaskControlBlock.next = NULL;
    displayTaskControlBlock.prev = NULL;
    displayTCB = &displayTaskControlBlock;
+
+   // buttons
+   char ButtonText[4][11] = {"Menu",  "Annun", " ", " "};
+   for (int i = 0; i < 2; i++) {
+      for (int j = 0; j < 2; j++) {
+        button[i*2 + j].initButton(&tft, 80 + (160 * j), 177 + (40 * i), BUTTON_W + 20, BUTTON_H, BLACK, BLACK, WHITE, ButtonText[(i * 2) + j], 2);
+      }
+   }
+   char MenuText[4][11] = {"Temp", "Systo", "Diasto", "Pulse"};
+   for (int i = 0; i < 4; i++) { 
+            menuButton[i].initButton(&tft, 155,  30 + (37 * i), BUTTON_W + 120, BUTTON_H - 5, BLUE, BLUE, WHITE, MenuText[i], 2); 
+   }
+   char AckText[1][4] = {"Ack"};
+   ackButton.initButton(&tft, 150, 140, BUTTON_W, BUTTON_H, MAGENTA, MAGENTA, WHITE, AckText[0], 2);
 
 
    // 5. KeyPad
@@ -449,8 +483,10 @@ void startUpTask(){
 
    // Get the timer started
    // Enable timer2 interrupt
+      noInterrupts();
    TIMSK2 = (TIMSK2 & B11111110) | 0x01;
-   
+   interrupts();             // enable all interrupts
+
    // Start the scheduler task
    executeTCB(&scheduleTaskControlBlock);
    return;
@@ -482,6 +518,8 @@ void scheduleTask(void* data){
       deleteTask(computeTCB);  // deleteTask has protection and check if computeTCB is removed already.
     }else if (addComputeTaskFlag == 1){
       // compute task has been added and scheduled by measureTask. add it in
+            Serial.print("add compute");
+
       insertTask(computeTCB);
       // increment the flag to be neutral
       addComputeTaskFlag++;
@@ -499,7 +537,9 @@ void scheduleTask(void* data){
       currTask = currTask->next;
     }
     // execute the keypad task (let the keypad task figure out its timer)
-    executeTCB(keypadTask);
+    digitalWrite(31, HIGH); 
+    executeTCB(keypadTCB);
+    digitalWrite(31, LOW); 
    }
    return;
 }
@@ -542,20 +582,30 @@ void deleteTask(TCB* task){
   TCB* currHead = schedulerTaskQueue->head;
   TCB* currTail = schedulerTaskQueue->tail;
   if (currHead == NULL){
+    Serial.print("A");
     // nothing to delete anyway
   } else if (currHead == currTail && task == currHead){
     // deleting the only one node
     schedulerTaskQueue->head = NULL;
     schedulerTaskQueue->tail = NULL;
+        Serial.print(" A ");
+
   } else if (task == currHead){ // so we have more than one tasks
     // we are deleteing the head. promote its next to be head
+        Serial.print(" B ");
+
     schedulerTaskQueue->head = task->next;
   } else if (task == currTail){
     // we are deleting the tail. drag the prev to be tail.
+    TCB* itsPrev = task->prev;
     schedulerTaskQueue->tail = task->prev;
+    itsPrev->next = NULL;
+
+        Serial.print(" C ");
+
   } else {
     // the task is in the middle
-    if (task->next == NULL || task->prev == NULL){
+    if (task->next == NULL && task->prev == NULL){
       // this task is not even in the queue
       return;
     }
@@ -565,6 +615,8 @@ void deleteTask(TCB* task){
     itsPrev->next = itsNext;
     itsNext->prev = itsPrev;
     // and we are done
+        Serial.print(" D ");
+
   }
   // finall, clean the task
   task->next = NULL;
@@ -581,7 +633,7 @@ void measureTask(void* data){
    timer = timeElapsed;
    Serial.print("\nMeasureTask Starts\n");
    MeasureData* mData = (MeasureData*)data;
-   unsigned int selections = *(mData->measurementSelectionPtr)
+   unsigned int selections = *(mData->measurementSelectionPtr);
    // run the measurement that has been scheduled.
    if (selections & TEMP_SCEHDULED){
      // measure temperature
@@ -589,6 +641,8 @@ void measureTask(void* data){
      freshTempCursor = (freshTempCursor + 1)%8;
      requestAndReceive((char*)&(mData->tempRawBufPtr[oldTempCursor]), sizeof(unsigned int), 
      (char*)&(mData->tempRawBufPtr[freshTempCursor]),sizeof(unsigned int), MEASURE_TASK, TEMP_RAW_SUBTASK);
+        addComputeTaskFlag++;  // just add one. repetition has been delt with.
+
    }
    if (selections & SYSTO_SCHEDULED ){
      // Measure Systolic
@@ -601,25 +655,30 @@ void measureTask(void* data){
         // alarm is expecting us to count how many times we are called.
         *(mData->mCountPtr) = *(mData->mCountPtr)+1;
      }
+        addComputeTaskFlag++;  // just add one. repetition has been delt with.
+
    } 
    if (selections & DIASTO_SCHEDULED ){
      // Measure Diastolic
      unsigned char oldDBPCursor  = freshDBPCursor ;
-     freshDBPCursor  = ((freshDBPCursor + 1) % 8) +8
+     freshDBPCursor  = ((freshDBPCursor + 1) % 8) +8;
      requestAndReceive((char*)&(mData->bpRawBufPtr[oldDBPCursor]), sizeof(unsigned int), 
      (char*)&(mData->bpRawBufPtr[freshDBPCursor]), sizeof(unsigned int), MEASURE_TASK, DIASTO_RAW_SUBTASK);
+        addComputeTaskFlag++;  // just add one. repetition has been delt with.
+
    } 
    if (selections & PULSE_SCHEDULED ){
      // Measure Pulse rate
      unsigned char oldPulseCursor  = freshPulseCursor ;
      freshPulseCursor  = (freshPulseCursor + 1)%8;
      requestAndReceive((char*)&(mData->prRawBufPtr[oldPulseCursor]), sizeof(unsigned int), 
-     (char*)&(mData->prRawBufPtr[freshPulseCursor),sizeof(unsigned int), MEASURE_TASK, PULSE_RAW_SUBTASK);
+     (char*)&(mData->prRawBufPtr[freshPulseCursor]),sizeof(unsigned int), MEASURE_TASK, PULSE_RAW_SUBTASK);
+             addComputeTaskFlag++;  // just add one. repetition has been delt with.
    }
    // Wrap up. clear the selections. notify that the compute task needs to be scheduled
    *(mData->measurementSelectionPtr) = 0;
-   addComputeTaskFlag++;  // just add one. repetition has been delt with.
-   Serial.print("MeasureTask Completes\n");
+   Serial.print((mData->prRawBufPtr[freshPulseCursor]));
+   Serial.print("  MeasureTask Completes\n ");
    return; // get out
 }
 
@@ -638,6 +697,8 @@ void computeTask(void* data){
    double tempCorrDump;
    requestAndReceive((char*)&(cData->tempRawBufPtr[freshTempCursor]),sizeof(unsigned int),
    (char*)&tempCorrDump, sizeof(double), COMPUTE_TASK, TEMP_RAW_SUBTASK);
+   Serial.print(tempCorrDump);
+   Serial.print(" is here\n");
    dtostrf(tempCorrDump, 1, 2, (char*)(cData->tempCorrectedBufPtr[freshTempCursor]));
    // compute systo
    unsigned int systoCorrDump;
@@ -651,9 +712,10 @@ void computeTask(void* data){
    dtostrf(bpDiastoCorrDump, 1, 2, (char*)(cData->bpCorrectedBufPtr[freshDBPCursor]));
    //compute pulse
    unsigned int prCorrDump;
-   requestAndReceive((char*)&(cData->prRawBufPtr[freshTempCursor ]),sizeof(unsigned int),
+   requestAndReceive((char*)&(cData->prRawBufPtr[freshPulseCursor]),sizeof(unsigned int),
    (char*)&prCorrDump, sizeof(unsigned int), COMPUTE_TASK, PULSE_RAW_SUBTASK);
-   dtostrf(prCorrDump, 1, 2, (char*)(cData->prCorrectedBufPtr[freshTempCursor]));
+   sprintf((char*)(cData->prCorrectedBufPtr[freshPulseCursor]), "%d", prCorrDump);
+
    // done. now suicide
    addComputeTaskFlag = 0;
    Serial.print("nComputeTask Completes\n");
@@ -753,7 +815,7 @@ void warningAlarmTask(void* data){
 
       }
     }
-    if (sysWarnResult == FALSE){
+    if (sysWarnResult == TRUE){
       // we are too high. have we received an ack yet?
       if (*(wData->ackReceived)){
         // yes. so lets get the mCount going
@@ -783,13 +845,185 @@ void warningAlarmTask(void* data){
 ******************************************/ 
 void displayTask(void* data){
    // no need for the timer
-  
+
+   DisplayData* dData = (DisplayData*)data;
+   // render the bottom buttons first base on mode selection
+   for (int i = 0; i < 4; i++) {
+     if (*(dData->modeSelection) == i ){
+       button[i].drawButton(true);
+     }else{
+       button[i].drawButton(false);
+     }
+   }
+   // now base on mode selection. decide which content to show.
+   if (*(dData->modeSelection) == 0){
+       // display menu
+       unsigned int selections = *(dData->measurementSelectionPtr);
+       // render the buttons 
+       if (selections & TEMP_SCEHDULED){
+          //render temp
+         menuButton[0].drawButton(true);
+       }else{
+         menuButton[0].drawButton(false);
+       }
+       if (selections & SYSTO_SCHEDULED){
+          //render temp
+         menuButton[1].drawButton(true);
+       }else{
+         menuButton[1].drawButton(false);
+       }
+       if (selections & DIASTO_SCHEDULED){
+          //render temp
+         menuButton[2].drawButton(true);
+       }else{
+         menuButton[2].drawButton(false);
+       }
+       if (selections & PULSE_SCHEDULED){
+          //render temp
+         menuButton[3].drawButton(true);
+       }else{
+         menuButton[3].drawButton(false);
+       }
+   }else if (*(dData->modeSelection) == 1) {
+       // display annunc stuffs
+       tft.setCursor(0,0);
+                 tft.println(" ");
+
+       // Display Temperature
+       tft.setTextColor(STATIC_TEXT_COLOR);
+       tft.print(" Temperature:");
+       // Show the Temprature
+       tft.setTextColor(*(dData->tempColorPtr),BACKGROUND_COLOR);
+       tft.print((char*)(dData->tempCorrectedBufPtr[freshTempCursor]));
+       int diff = TEMP_DISP_WIDTH - strlen((char*)(dData->tempCorrectedBufPtr[freshTempCursor]));
+       for (int i = 0; i<diff; i++){
+          tft.print(" ");
+       }
+       tft.print(" C\n");
+
+       // Display Blood Pressure
+       tft.setTextColor(STATIC_TEXT_COLOR);
+       tft.println(" Pressure:");
+       tft.print("   Systolic: ");
+       tft.setTextColor(*(dData->systoColorPtr),BACKGROUND_COLOR);
+       tft.print((char*)(dData->bpCorrectedBufPtr[freshSBPCursor]));
+       tft.print(".00");
+       diff = SYS_PRESS_DISP_WIDTH-strlen((char*)(dData->bpCorrectedBufPtr[freshSBPCursor]));
+       for (int i = 0; i<diff; i++){
+          tft.print(" ");
+       }
+       tft.println(" mm Hg");
+       // Display Diastolic
+
+       tft.setTextColor(STATIC_TEXT_COLOR);
+       tft.print("   Diastolic:");
+       // Show the Dias Pressure
+       tft.setTextColor(*(dData->diastoColorPtr),BACKGROUND_COLOR);
+       tft.print((char*)(dData->bpCorrectedBufPtr[freshDBPCursor]));
+       diff = DIAS_PRESS_DISP_WIDTH-strlen((char*)(dData->bpCorrectedBufPtr[freshDBPCursor]));
+       for (int i = 0; i<diff; i++){
+         tft.print(" ");
+       }
+       tft.println(" mm Hg");
+       // Display Pulse
+       tft.setTextColor(STATIC_TEXT_COLOR);
+       tft.print(" Pulse rate: ");
+       // Show the PulseRate
+       tft.setTextColor(*(dData->pulseColorPtr),BACKGROUND_COLOR);
+       tft.print((char*)(dData->prCorrectedBufPtr[freshPulseCursor]));
+       diff = PULSE_PRESS_DISP_WIDTH-strlen((char*)(dData->prCorrectedBufPtr[freshPulseCursor]));
+       for (int i = 0; i<diff; i++){
+         tft.print(" ");
+       }
+       tft.println(" BPM");
+
+       // Battery
+       tft.setTextColor(STATIC_TEXT_COLOR);
+       tft.print(" Battery:     ");
+       // Figure out the color
+       if (*(dData->batteryState) <= BATTERY_LIMIT){
+          tft.setTextColor(RED, BACKGROUND_COLOR);
+       }else{
+          tft.setTextColor(GREEN, BACKGROUND_COLOR);
+       }
+       char batteryStateBuffer[9];
+       sprintf(batteryStateBuffer, "%d  ",*(dData->batteryState));
+       tft.print(batteryStateBuffer);
+       // render the ackButton
+       if (*(dData->ackReceived)){
+         ackButton.drawButton(true);
+       }else{
+         ackButton.drawButton(false);
+       }
+       // Thats all
+   }
+
    return;
 }
 
 
 void keypadTask(void* data){
-  ?????
+  static unsigned long timer = 0;
+   if (timer!=0 && (timeElapsed-timer)<KEYPAD_SCAN_INTERVAL){  // scan every 20ms
+     return;
+   }
+   timer = timeElapsed;
+   KeypadData* kData = (KeypadData*) data;
+   // now get the pressure point
+   digitalWrite(13, HIGH); 
+   TSPoint p = ts.getPoint(); 
+   digitalWrite(13, LOW); 
+   pinMode(XM, OUTPUT); 
+   pinMode(YP, OUTPUT); 
+   if (p.z > MINPRESSURE && p.z < MAXPRESSURE) { 
+    // touch recevied
+    int scaleFactor = 1000;
+    if (*(kData->modeSelection) == 0){
+      // menu. use 950
+      scaleFactor = 950;
+    }else{
+      scaleFactor = 1000;
+    }
+    int x2 = (int)floor((scaleFactor-p.y)*1.0/scaleFactor*320.0);
+    int y2 = (int)floor((scaleFactor-p.x)*1.0/scaleFactor*250.0);
+    // check if the mode button is clicked
+    for (int i = 0; i < 2; i++) {
+    if (button[i].contains(x2, y2)) {
+      // one thing has been selected
+      tft.fillScreen(BACKGROUND_COLOR);
+      if(button[i].contains(x2, y2)) { 
+        // this button is selected
+        *(kData->modeSelection) = i;
+      } 
+     }
+    }
+     if ((*(kData->modeSelection) == 0) && *(kData->measurementSelectionPtr) != 0){
+      //do nothing
+      return;
+    }
+    // check if the menu select button is clicked
+    if ((*(kData->modeSelection) == 0) && (menuButton[0].contains(x2,y2))){
+      // temp selected
+      *(kData->measurementSelectionPtr) = *(kData->measurementSelectionPtr) | TEMP_SCEHDULED;
+    }else
+    if ((*(kData->modeSelection) == 0) && (menuButton[1].contains(x2,y2))){
+      // systo selected
+      *(kData->measurementSelectionPtr) = *(kData->measurementSelectionPtr) | SYSTO_SCHEDULED;
+    }else
+    if ((*(kData->modeSelection) == 0) && (menuButton[2].contains(x2,y2))){
+      // diasto selected
+      *(kData->measurementSelectionPtr) = *(kData->measurementSelectionPtr) | DIASTO_SCHEDULED;
+    }else
+    if ((*(kData->modeSelection) == 0) && (menuButton[3].contains(x2,y2))){
+      // pulse selected
+      *(kData->measurementSelectionPtr) = *(kData->measurementSelectionPtr) | PULSE_SCHEDULED;
+    }else
+    // check if the ack button is clicked
+    if ((*(kData->modeSelection) == 1) && (ackButton.contains(x2,y2))){
+      //acked
+      *(kData->ackReceived) = 1;
+    }
+   }
 }
 
 
