@@ -35,11 +35,12 @@
 #define BLACK   0x0000
 #define BLUE    0x001F
 #define RED     0xF800
-#define GREEN   0x0700
+#define GREEN   0x05E0
 #define CYAN    0x07FF
 #define MAGENTA 0xF81F
 #define YELLOW  0xFFE0
 #define WHITE   0xFFFF
+#define ORANGE  0xFCC0
 #define BACKGROUND_COLOR 0xFFFF
 #define STATIC_TEXT_COLOR 0x0000
 #define GOOD_DATA_COLOR 0x0700
@@ -64,7 +65,8 @@ typedef struct
   unsigned int* tempRawBufPtr;
   unsigned int* bpRawBufPtr;
   unsigned int* prRawBufPtr;
-  unsigned int* measurementSelectionPtr;  
+  unsigned int* measurementSelectionPtr; 
+  unsigned int* mCountPtr; 
 } MeasureData; 
 
 
@@ -85,13 +87,18 @@ typedef struct
   unsigned int* bpRawBufPtr;
   unsigned int* prRawBufPtr;
   unsigned short* batteryState;
-  unsigned char* bpOutOfRange;
   unsigned char* tempOutOfRangePtr;
   Bool* tempHighPtr;
   unsigned char* bpOutOfRangePtr;
   Bool* bpHighPtr;
   unsigned char* pulseOutOfRangePtr;
   Bool* pulseLowPtr;
+  unsigned char* ackReceived;
+  unsigned int* tempColorPtr;
+  unsigned int* systoColorPtr;
+  unsigned int* diastoColorPtr;
+  unsigned int* pulseColorPtr;
+  unsigned int* mCountPtr; 
 } WarningAlarmData;
 
 
@@ -102,12 +109,22 @@ typedef struct
   unsigned char** bpCorrectedBufPtr;
   unsigned char** prCorrectedBufPtr;  
   unsigned short* batteryState;
-  WarningAlarmData* warnData;
+  unsigned int* tempColorPtr;
+  unsigned int* systoColorPtr;
+  unsigned int* diastoColorPtr;
+  unsigned int* pulseColorPtr;
+  unsigned char* modeSelection;
 }  DisplayData;
 
 
 //Keypad Data
-dasdasdsads
+typedef struct
+{
+    unsigned int* measurementSelectionPtr;  
+    unsigned char* ackReceived;
+    unsigned char* modeSelection;
+} KeypadData;
+
 
 // StatusData
 typedef struct
@@ -145,16 +162,29 @@ void deleteTask(TCB* task);
 Elegoo_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 
 
+
+// Globals for keypad and ack
+unsigned char ackReceived = 0;
+unsigned char mCount = 0; 
+unsigned char modeSelection = 0;  // 0 means annunciation   1 means menu
 // Global Variables for Measurements
-Remember Comput's Initial Value
 unsigned int temperatureRawBuf[8] = {75,0,0,0,0,0,0,0};
 unsigned int bloodPressureRawBuf[16] = {80,0,0,0,0,0,0,0,80,0,0,0,0,0,0,0};
 unsigned int pulseRateRawBuf[8] = {0,0,0,0,0,0,0,0};
 unsigned int measurementSelection = 0; // this is using a bit mask capability. See MeasureTask function for detail 
+// Initial Values for Compute
+char* initialTempDisplay = "61.25";
+char* initialSystoDisplay = "169.00";
+char* initialDiastoDisplay = "126.00";
+char* initialPulseDisplay = "8";
 // Global Variables for Display
 unsigned char* tempCorrectedBuf[8];
 unsigned char* bloodPressureCorrectedBuf[16];
 unsigned char* pulseRateCorrectedBuf[8];
+unsigned int tempColor = GREEN;
+unsigned int systoColor = GREEN;
+unsigned int diastoColor = GREEN;
+unsigned int pulseColor = GREEN;
 // Global Variables for Function Counter
 unsigned char freshTempCursor = 0;
 unsigned char freshSBPCursor = 0;
@@ -268,6 +298,8 @@ void startUpTask(){
    tft.setCursor(0, 0);
    tft.setTextColor(GOOD_DATA_COLOR); 
    tft.setTextSize(2);
+   
+   
    // Prepare for each task Each Tasks
    // 1. Measure
    // Data:
@@ -275,7 +307,8 @@ void startUpTask(){
    measureData.temRawBufPtr = &temperatureRawBuf[0];
    measureData.bpRawBufPtr = &bloodPressureRawBuf[0];;
    measureData.prRawBufPtr = &pulseRateRawBuf[0];
-   measureData.measurementSelectionPtr = &measurementSelectionPtr;
+   measureData.measurementSelectionPtr = &measurementSelection;
+   measureData.mCountPtr = &mCount;
    freshTempCursor = 0;
    freshSBPCursor = 0;
    freshDBPCursor = 8;
@@ -307,6 +340,11 @@ void startUpTask(){
    for (int i=0; i<8; i++){
      pulseRateCorrectedBuf[i] = (unsigned char*)malloc(MAX_STR_BUF_LEN);
    }
+   strcpy(tempCorrectedBuf[0], initialTempDisplay);
+   strcpy(bloodPressureCorrectedBuf[0], initialSystoDisplay);
+   strcpy(bloodPressureCorrectedBuf[8], initialDiastoDisplay);
+   strcpy(pulseRateCorrectedBuf[0], initialPulseDisplay);
+
    //TCB
    TCB computeTCBlock;
    computeTCBlock.taskDataPtr = (void*)&computeData;
@@ -328,6 +366,13 @@ void startUpTask(){
    warningAlarmData.pulseOutOfRangePtr = &pulseOutOfRange;
    warningAlarmData.pulseLowPtr = &pulseLow;
    warningAlarmData.batteryState = &batteryState;
+   warningAlarmData.ackReceived = &ackReceived;
+   warningAlarmData.tempColorPtr = &tempColor;
+   warningAlarmData.systoColorPtr = &systoColor;
+   warningAlarmData.diastoColorPtr = diastoColor;
+   warningAlarmData.pulseColorPtr = &pulseColor;
+   warningAlarmData.mCountPtr = &mCount;
+
    // TCB:
    TCB warningAlarmTCBlock;
    warningAlarmTCBlock.myTask = warningAlarmTask;
@@ -343,7 +388,11 @@ void startUpTask(){
    displayData.bpCorrectedBufPtr = &bloodPressureCorrectedBuf[0];
    displayData.prCorrectedBufPtr = &pulseRateCorrectedBuf[0];
    displayData.batteryState = &batteryState;
-   displayData.warnData = &warningAlarmTCBlock;
+   displayData.tempColorPtr = &tempColor;
+   displayData.systoColorPtr = &systoColor;
+   displayData.diastoColorPtr = diastoColor;
+   displayData.pulseColorPtr = &pulseColor;
+   displayData.modeSelection = &modeSelection;
    // TCB:
    TCB displayTaskControlBlock;
    displayTaskControlBlock.myTask = displayTask;
@@ -351,8 +400,24 @@ void startUpTask(){
    displayTaskControlBlock.next = NULL;
    displayTaskControlBlock.prev = NULL;
    displayTCB = &displayTaskControlBlock;
+
+
+   // 5. KeyPad
+   // data:
+   KeypadData keypadData;
+   keypadData.measurementSelectionPtr = &measurementSelection;  
+   keypadData.ackReceived = &ackReceived;
+   keypadData.modeSelection = &modeSelection;
+   // TCB:
+   TCB keypadTaskControlBlock;
+   keypadTaskControlBlock.myTask = keypadTask;
+   keypadTaskControlBlock.taskDataPtr = (void*)&keypadData;
+   keypadTaskControlBlock.next = NULL;
+   keypadTaskControlBlock.next = NULL;
+   keypadTCB = &keypadTaskControlBlock;
+
    
-   // 5. Status
+   // 6. Status
    // data:
    StatusData statusData;
    statusData.batteryState = &batteryState;
@@ -363,8 +428,9 @@ void startUpTask(){
    statusTaskControlBlock.next = NULL;
    statusTaskControlBlock.next = NULL;
    statusTCB = &statusTaskControlBlock;
-   
-   // 6. Schedule
+
+
+   // 7. Schedule
    // data:
    SchedulerData schedulerData;
    schedulerData.head = NULL;
@@ -376,9 +442,10 @@ void startUpTask(){
    scheduleTaskControlBlock.taskDataPtr = (void*)&schedulerData;
    // Insert the basic TCBs in
    insertTask(statusTCB);
-   insertTask(displayTCB);
    insertTask(measureTCB);
    insertTask(warningAlarmTCB);
+   insertTask(displayTCB);
+
 
    // Get the timer started
    // Enable timer2 interrupt
@@ -432,7 +499,7 @@ void scheduleTask(void* data){
       currTask = currTask->next;
     }
     // execute the keypad task (let the keypad task figure out its timer)
-    //???????????????????????
+    executeTCB(keypadTask);
    }
    return;
 }
@@ -529,6 +596,11 @@ void measureTask(void* data){
      freshSBPCursor  = (freshSBPCursor  + 1)%8;
      requestAndReceive((char*)&(mData->bpRawBufPtr[oldSBPCursor]), sizeof(unsigned int), 
      (char*)&(mData->bpRawBufPtr[freshSBPCursor]), sizeof(unsigned int), MEASURE_TASK, SYSTO_RAW_SUBTASK);
+     // do the systo alarm increment
+     if (*(mData->mCountPtr) > 0){
+        // alarm is expecting us to count how many times we are called.
+        *(mData->mCountPtr) = *(mData->mCountPtr)+1;
+     }
    } 
    if (selections & DIASTO_SCHEDULED ){
      // Measure Diastolic
@@ -588,6 +660,7 @@ void computeTask(void* data){
    return; // getout
 }
 
+
 void warningAlarmTask(void* data){
   // no timer is needed
   WarningAlarmData* wData = (WarningAlarmData*)data;
@@ -635,6 +708,66 @@ void warningAlarmTask(void* data){
   }else{
    *(wData->pulseLowPtr) = TRUE;
   }
+  // NOW, lets determine what will be going on here
+  // temperature
+  if (*(wData->tempOutOfRangePtr)){
+    // out
+    *(wData->tempColorPtr) = ORANGE;
+  }else{
+    // good
+    *(wData->tempColorPtr) = GREEN;
+  }
+  // general pressure
+  if (*(wData->bpOutOfRangePtr)){
+    // out
+    *(wData->systoColorPtr) = ORANGE;
+    *(wData->diastoColorPtr) = ORANGE;
+  }else{
+    // good
+    *(wData->systoColorPtr) = GREEN;
+    *(wData->diastoColorPtr) = GREEN;
+  }
+  // pulse rate
+  if (*(wData->pulseOutOfRangePtr)){
+    // out
+    *(wData->pulseColorPtr) = ORANGE;
+  }else{
+    // good
+    *(wData->pulseColorPtr) = GREEN;
+  }
+  // Special Case for Systolic
+  if ((!sysAlarmResult) && (sysWarnResult == FALSE)){
+    // it is actually ok now
+    *(wData->systoColorPtr) = GREEN;
+    *(wData->ackReceived) = 0;
+    *(wData->mCountPtr) = 0;
+  } else {
+    if (sysAlarmResult){
+      // it is at least out of range
+      if (*(wData->mCountPtr)>6){
+        // wait, it has been out for 5 measurements
+        *(wData->systoColorPtr) = RED;
+      }else{
+        // it is still fine now
+        *(wData->systoColorPtr) = ORANGE;
+
+      }
+    }
+    if (sysWarnResult == FALSE){
+      // we are too high. have we received an ack yet?
+      if (*(wData->ackReceived)){
+        // yes. so lets get the mCount going
+        if (*(wData->mCountPtr) == 0){
+          // if it was zero, start it. otherwise, it has started so leave it be.
+          *(wData->mCountPtr) = 1;
+        }
+        // make it the same fashion as out of range. so thats it
+      }else{
+        // not acked. make it red
+        *(wData->systoColorPtr) = RED;
+      } 
+    }
+  }
   return; // done. get out
 }
 
@@ -654,6 +787,10 @@ void displayTask(void* data){
    return;
 }
 
+
+void keypadTask(void* data){
+  ?????
+}
 
 
 void statusTask(void* data){
