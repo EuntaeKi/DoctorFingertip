@@ -43,8 +43,8 @@ bool systoInitialized;
 bool diasInitialized;
 unsigned int systoInitial;
 unsigned int diastoInitial;
-const int PRpinIn = 2; 
-const int delayTime = 5; 
+const int PRpinIn = 3; 
+const int delayTime = 3; 
 volatile byte PRcounter;
 unsigned long passedTime; 
 unsigned int pulseRateData; 
@@ -67,6 +67,7 @@ void setup()
   // start serial port at 9600 bps and wait for serial port on the uno to open:
   Serial.begin(9600);
   attachInterrupt(digitalPinToInterrupt(PRpinIn), isr, RISING);
+  detachInterrupt(digitalPinToInterrupt(PRpinIn));
   pinMode(PRpinIn, INPUT_PULLUP); 
   PRcounter = 0; 
   pulseRateData = 0; 
@@ -85,6 +86,7 @@ void setup()
   diasInitialized = 0;
   systoInitial = 0;
   diastoInitial = 0;
+  passedTime = 0;
 }
 
 /******************************************
@@ -336,13 +338,12 @@ void isr()
 ******************************************/
 unsigned int pulseRate(unsigned int data)
 {
-  delay(1000); 
-  detachInterrupt(digitalPinToInterrupt(PRpinIn)); 
-  pulseRateData = (12 * PRcounter);  
-  PRcounter = 0; 
-  //Serial.println(pulseRate);
   attachInterrupt(digitalPinToInterrupt(PRpinIn), isr, RISING);
-  return pulseRateData/2;
+  delay(1000 * delayTime);
+  pulseRateData = (60000 /(1000 * delayTime) * (PRcounter)) - 20;
+  PRcounter = 0;
+  detachInterrupt(digitalPinToInterrupt(PRpinIn));
+  return pulseRateData;
 }
 
 /******************************************
