@@ -1,7 +1,7 @@
 #define BASE_TEN_BASE 10
-#define PRpinIn 2
-#define RRpinIn 3
-#define delayTime 3
+#define PR_PIN_IN 2
+#define RR_PIN_IN 3
+#define DELAY_TIME 3
 
 // function headers
 void setup();
@@ -70,12 +70,12 @@ void setup()
   // running on the uno - connect to tx1 and rx1 on the mega and to rx and tx on the uno
   // start serial port at 9600 bps and wait for serial port on the uno to open:
   Serial.begin(9600);
-  attachInterrupt(digitalPinToInterrupt(RRpinIn), isrRR, RISING);
-  detachInterrupt(digitalPinToInterrupt(RRpinIn));
-  attachInterrupt(digitalPinToInterrupt(PRpinIn), isrPR, RISING);
-  detachInterrupt(digitalPinToInterrupt(PRpinIn));
-  pinMode(PRpinIn, INPUT_PULLUP); 
-  pinMode(RRpinIn, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(RR_PIN_IN), isrRR, RISING);
+  detachInterrupt(digitalPinToInterrupt(RR_PIN_IN));
+  attachInterrupt(digitalPinToInterrupt(PR_PIN_IN), isrPR, RISING);
+  detachInterrupt(digitalPinToInterrupt(PR_PIN_IN));
+  pinMode(PR_PIN_IN, INPUT_PULLUP); 
+  pinMode(RR_PIN_IN, INPUT_PULLUP);
   PRcounter = 0; 
   RRcounter = 0;
   pulseRateData = 0;
@@ -341,7 +341,7 @@ unsigned int diastolicPress(unsigned int data) {
  ************************************/
 void isrPR() 
 { 
-  PRcounter++; 
+  PRcounter++;
 }
 
 /******************************************
@@ -356,11 +356,11 @@ void isrPR()
 ******************************************/
 unsigned int pulseRate(unsigned int data)
 {
-  attachInterrupt(digitalPinToInterrupt(PRpinIn), isrPR, RISING);
-  delay(1000 * delayTime);
-  pulseRateData = (60000 /(1000 * delayTime) * (PRcounter)) - 20;
+  attachInterrupt(digitalPinToInterrupt(PR_PIN_IN), isrPR, RISING);
+  delay(1000 * DELAY_TIME);
+  pulseRateData = (60000 /(1000 * DELAY_TIME) * (PRcounter));
   PRcounter = 0;
-  detachInterrupt(digitalPinToInterrupt(PRpinIn));
+  detachInterrupt(digitalPinToInterrupt(PR_PIN_IN));
   return pulseRateData;
 }
 
@@ -378,11 +378,11 @@ void isrRR() {
 }
 
 unsigned int respRate(unsigned int data) {
-  attachInterrupt(digitalPinToInterrupt(RRpinIn), isrRR, RISING);
-  delay(1000 * delayTime);
-  pulseRateData = (60000 /(1000 * delayTime) * (RRcounter)) - 20;
+  attachInterrupt(digitalPinToInterrupt(RR_PIN_IN), isrRR, RISING);
+  delay(1000 * DELAY_TIME);
+  pulseRateData = (60000 /(1000 * DELAY_TIME) * (RRcounter)) - 20;
   RRcounter = 0;
-  detachInterrupt(digitalPinToInterrupt(RRpinIn));
+  detachInterrupt(digitalPinToInterrupt(RR_PIN_IN));
   return respRateData;
 }
 
