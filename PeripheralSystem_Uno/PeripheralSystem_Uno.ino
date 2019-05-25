@@ -1,4 +1,7 @@
 #define BASE_TEN_BASE 10
+#define PRpinIn 2
+#define RRpinIn 3
+#define delayTime 3
 
 // function headers
 void setup();
@@ -9,22 +12,26 @@ unsigned int temperature(unsigned int data);
 unsigned int systolicPress(unsigned int data);
 unsigned int diastolicPress(unsigned int data);
 unsigned int pulseRate(unsigned int data);
+unsigned int respRate(unsigned int data);
 unsigned short statusCheck(unsigned short data);
 // For compute
 double tempCorrected(unsigned int data);
 unsigned int sysCorrected(unsigned int data);
 double diasCorrected(unsigned int data);
 unsigned int prCorrected(unsigned int data);
+unsigned int rrCorrected(unsigned int data);
 // For alarm
 char tempRange(unsigned int data);
 char sysRange(unsigned int data);
 char diasRange(unsigned int data);
 char prRange(unsigned int data);
+char rrRange(unsigned int data);
 // For warning
 char tempHigh(unsigned int data);
 char sysHigh(unsigned int data);
 char diasHigh(unsigned int data);
 char prHigh(unsigned int data);
+char rrHigh(unsigned int data);
 
 
 // Gloabal Variables for Uno
@@ -34,20 +41,17 @@ int tempFlag;
 int tempMultiplier;
 int systCount;
 int diastCount;
-int pulseCount;
-int pulseFlag;
-int pulseMultiplier;
 bool systolicFlag;
 bool diastolicFlag;
 bool systoInitialized;
 bool diasInitialized;
 unsigned int systoInitial;
 unsigned int diastoInitial;
-const int PRpinIn = 3; 
-const int delayTime = 3; 
 volatile byte PRcounter;
+volatile byte RRcounter;
 unsigned long passedTime; 
-unsigned int pulseRateData; 
+unsigned int pulseRateData;
+unsigned int respRateData; 
 
 
 /******************************************
@@ -66,27 +70,28 @@ void setup()
   // running on the uno - connect to tx1 and rx1 on the mega and to rx and tx on the uno
   // start serial port at 9600 bps and wait for serial port on the uno to open:
   Serial.begin(9600);
-  attachInterrupt(digitalPinToInterrupt(PRpinIn), isr, RISING);
+  attachInterrupt(digitalPinToInterrupt(RRpinIn), isrRR, RISING);
+  detachInterrupt(digitalPinToInterrupt(RRpinIn));
+  attachInterrupt(digitalPinToInterrupt(PRpinIn), isrPR, RISING);
   detachInterrupt(digitalPinToInterrupt(PRpinIn));
   pinMode(PRpinIn, INPUT_PULLUP); 
+  pinMode(RRpinIn, INPUT_PULLUP);
   PRcounter = 0; 
-  pulseRateData = 0; 
+  RRcounter = 0;
+  pulseRateData = 0;
+  respRateData = 0; 
   passedTime = 0; 
   tempCount = 0;
   systCount = 0;
   diastCount = 0;
-  pulseCount = 0;
   systolicFlag = false;
   diastolicFlag = false;
   tempMultiplier = -1;
-  pulseMultiplier = -1;
   tempFlag = 0;
-  pulseFlag = 0;
   systoInitialized = 0;
   diasInitialized = 0;
   systoInitial = 0;
   diastoInitial = 0;
-  passedTime = 0;
 }
 
 /******************************************
@@ -154,6 +159,9 @@ void taskDispatcher(byte task,  byte subtask){
         case 4:                                         // Case 4: pulseRateRaw
           returnIntDump = pulseRate(dataIntType);
           break; 
+        case 5:                                         // Case 5: respirationRateRaw
+          returnIntDump = pulseRate(dataIntType);
+          break;
       }
       writeBack((char*)&returnIntDump, sizeof(unsigned int));
       break; 
@@ -175,6 +183,10 @@ void taskDispatcher(byte task,  byte subtask){
         case 4:                                         // Case 4: prCorrected
           returnIntDump = prCorrected(dataIntType); 
           writeBack((char*)&returnIntDump, sizeof(unsigned int));
+          break;
+        case 5:                                         // Case 5: rrCorrected
+          returnIntDump = rrCorrected(dataIntType);
+          writeBack((char*)&returnIntDump, sizeof(unsigned int));
           break; 
       }
       break;
@@ -193,24 +205,30 @@ void taskDispatcher(byte task,  byte subtask){
           case 4:                                       // Case 4: prAlarm
             returnCharDump = prRange(dataIntType);
             break; 
+          case 5:                                       // Case 5: rrAlarm
+            returnCharDump = rrRange(dataIntType);
+            break;
         }
         writeBack(&returnCharDump, sizeof(char)); 
         break; 
-    case 4:                                             // Case 3: Warm if high
+    case 4:                                             // Case 4: Warning if high
       Serial.readBytes((char*)&dataIntType, sizeof(unsigned int));
-        switch(subtask){                                // Case 1: tempAlarm
-          case 1:  
+        switch(subtask){                                
+          case 1:                                       // Case 1: tempWarning
             returnCharDump = tempHigh(dataIntType);
             break;
-          case 2:                                       // Case 2: sysAlarm                 
+          case 2:                                       // Case 2: sysWarning              
             returnCharDump = sysHigh(dataIntType);
             break; 
-          case 3:                                       // Case 3: diasAlarm
+          case 3:                                       // Case 3: diasWarning
             returnCharDump = diasHigh(dataIntType);
             break; 
-          case 4:                                       // Case 4: prAlarm
+          case 4:                                       // Case 4: prWarning
             returnCharDump = prHigh(dataIntType);
             break; 
+          case 5:                                       // Case 5: rrWarning
+            returnCharDump = rrHigh(dataIntType);
+            break;
         }
         writeBack(&returnCharDump, sizeof(char)); 
         break;  
@@ -313,7 +331,7 @@ unsigned int diastolicPress(unsigned int data) {
 }
 
 /*******************************
- * Function Name:        isr
+ * Function Name:        isrPR
  * Function Inputs:      none
  * Function Outputs:     increment counter
  * Function Description: The interrupt service routine on 
@@ -321,7 +339,7 @@ unsigned int diastolicPress(unsigned int data) {
  *                       pulse rate.
  *                       
  ************************************/
-void isr() 
+void isrPR() 
 { 
   PRcounter++; 
 }
@@ -338,12 +356,34 @@ void isr()
 ******************************************/
 unsigned int pulseRate(unsigned int data)
 {
-  attachInterrupt(digitalPinToInterrupt(PRpinIn), isr, RISING);
+  attachInterrupt(digitalPinToInterrupt(PRpinIn), isrPR, RISING);
   delay(1000 * delayTime);
   pulseRateData = (60000 /(1000 * delayTime) * (PRcounter)) - 20;
   PRcounter = 0;
   detachInterrupt(digitalPinToInterrupt(PRpinIn));
   return pulseRateData;
+}
+
+/*******************************
+ * Function Name:        isrRR
+ * Function Inputs:      none
+ * Function Outputs:     increment counter
+ * Function Description: The interrupt service routine on 
+ *                       positive edge. Counts the every beat on 
+ *                       respiration rate.
+ *                       
+ ************************************/
+void isrRR() {
+  RRcounter++;
+}
+
+unsigned int respRate(unsigned int data) {
+  attachInterrupt(digitalPinToInterrupt(RRpinIn), isrRR, RISING);
+  delay(1000 * delayTime);
+  pulseRateData = (60000 /(1000 * delayTime) * (RRcounter)) - 20;
+  RRcounter = 0;
+  detachInterrupt(digitalPinToInterrupt(RRpinIn));
+  return respRateData;
 }
 
 /******************************************
@@ -391,7 +431,7 @@ double diasCorrected(unsigned int data) {
 /******************************************
 * Function Name: prCorrected
 * Function Inputs: Integer of raw data
-* Function Outputs: Double of corrected data
+* Function Outputs: int of corrected data
 * Function Description: perform a conversion of
 *           data from measured data to
 *           computed data in BPM
@@ -399,6 +439,20 @@ double diasCorrected(unsigned int data) {
 ******************************************/
 unsigned int prCorrected(unsigned int data) {
   unsigned int dataCorrected = 8 + (3 * data);
+  return dataCorrected;
+}
+
+/******************************************
+* Function Name: rrCorrected
+* Function Inputs: Integer of raw data
+* Function Outputs: int of corrected data
+* Function Description: perform a conversion of
+*           data from measured data to
+*           computed data in breath per minute
+* Author: Matt, Michael, Eun Tae
+******************************************/
+unsigned int rrCorrected(unsigned int data) {
+  unsigned int dataCorrected = 7 + (3 * data);
   return dataCorrected;
 }
 
@@ -471,6 +525,23 @@ char prRange(unsigned int data) {
 } 
 
 /******************************************
+* Function Name: rrRange
+* Function Inputs: Integer of raw data
+* Function Outputs: Character, which behaves like boolean
+* Function Description: Checks whether given input breath per minute data
+*           is within the range of normal
+* Author: Matt, Michael, Eun Tae
+******************************************/
+char rrRange(unsigned int data) { 
+  char result = 1; 
+  unsigned int dataCorrected = 7 + (3 * data);
+  if (dataCorrected >= 12 && dataCorrected <= 25) { 
+    result = 0; 
+  }
+  return result; 
+} 
+
+/******************************************
 * Function Name: tempHigh
 * Function Inputs: Integer of raw data
 * Function Outputs: Character, which behaves like boolean
@@ -532,6 +603,23 @@ char diasHigh(unsigned int data) {
 char prHigh(unsigned int data) { 
   char result = 1; 
   unsigned int dataCorrected = 8 + (3 * data);
+  if (dataCorrected <= 100) { 
+    result = 0; 
+  }
+  return result; 
+} 
+
+/******************************************
+* Function Name: rrHigh
+* Function Inputs: Integer of raw data
+* Function Outputs: Character, which behaves like boolean
+* Function Description: Checks whether given input data
+*             is above 25 breath per minute
+* Author: Matt, Michael, Eun Tae
+******************************************/
+char rrHigh(unsigned int data) { 
+  char result = 1; 
+  unsigned int dataCorrected = 8 + (7 * data);
   if (dataCorrected <= 100) { 
     result = 0; 
   }
