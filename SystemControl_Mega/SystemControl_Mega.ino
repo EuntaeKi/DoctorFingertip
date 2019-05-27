@@ -84,6 +84,13 @@ typedef struct
   unsigned char* mCountPtr; 
 } MeasureData; 
 
+typedef struct
+{
+  unsigned int* tempRawBufPtr;
+  unsigned int* bpRawBufPtr;
+  unsigned int* prRawBufPtr;
+  unsigned int* rrRawBufPtr;
+} RemComData; 
 
 typedef struct
 {
@@ -179,6 +186,7 @@ void displayTask(void* data);
 void statusTask(void* data);
 // Intrasystem Communication functions
 void requestAndReceive(char* inputBuffer, char inputLength , char* outputBuffer, char outputLength, char taskType, char subTaskType);
+void toTerminal(unsigned int inputBuffer, char taskType, char subTaskType);
 // TCB executer functions
 void executeTCB(TCB* taskControlBlock);
 // TaskQueue Management
@@ -200,6 +208,7 @@ unsigned int bloodPressureRawBuf[16] = {80,0,0,0,0,0,0,0,80,0,0,0,0,0,0,0};
 unsigned int pulseRateRawBuf[8] = {0,0,0,0,0,0,0,0};
 unsigned int respirationRateRawBuf[8] = {0,0,0,0,0,0,0,0};
 unsigned int measurementSelection = 0; // this is using a bit mask capability. See MeasureTask function for detail 
+unsigned int remoteScheduled = 0;
 // Initial Values for Compute
 const char* initialTempDisplay = "61.25";
 const char* initialSystoDisplay = "169";
@@ -296,36 +305,36 @@ void startUpTask() {
    tft.reset();
    uint16_t identifier = tft.readID();
    if(identifier == 0x9325) {
-     Serial.println(F("Found ILI9325 LCD driver"));
+     //Serial.println(F("Found ILI9325 LCD driver"));
    } else if(identifier == 0x9328) {
-     Serial.println(F("Found ILI9328 LCD driver"));
+     //Serial.println(F("Found ILI9328 LCD driver"));
    } else if(identifier == 0x4535) {
-     Serial.println(F("Found LGDP4535 LCD driver"));
+     //Serial.println(F("Found LGDP4535 LCD driver"));
    }else if(identifier == 0x7575) {
-     Serial.println(F("Found HX8347G LCD driver"));
+     //Serial.println(F("Found HX8347G LCD driver"));
    } else if(identifier == 0x9341) {
-     Serial.println(F("Found ILI9341 LCD driver"));
+     //Serial.println(F("Found ILI9341 LCD driver"));
    } else if(identifier == 0x8357) {
-     Serial.println(F("Found HX8357D LCD driver"));
+     //Serial.println(F("Found HX8357D LCD driver"));
    } else if(identifier==0x0101)
    {
        identifier=0x9341;
-       Serial.println(F("Found 0x9341 LCD driver"));
+       //Serial.println(F("Found 0x9341 LCD driver"));
    }
    else if(identifier==0x1111)
    {
        identifier=0x9328;
-       Serial.println(F("Found 0x9328 LCD driver"));
+       //Serial.println(F("Found 0x9328 LCD driver"));
    }
    else {
-     Serial.print(F("Unknown LCD driver chip: "));
-     Serial.println(identifier, HEX);
-     Serial.println(F("If using the Elegoo 2.8\" TFT Arduino shield, the line:"));
-     Serial.println(F("  #define USE_Elegoo_SHIELD_PINOUT"));
-     Serial.println(F("should appear in the library header (Elegoo_TFT.h)."));
-     Serial.println(F("If using the breakout board, it should NOT be #defined!"));
-     Serial.println(F("Also if using the breakout, double-check that all wiring"));
-     Serial.println(F("matches the tutorial."));
+     //Serial.print(F("Unknown LCD driver chip: "));
+     //Serial.println(identifier, HEX);
+     //Serial.println(F("If using the Elegoo 2.8\" TFT Arduino shield, the line:"));
+     //Serial.println(F("  #define USE_Elegoo_SHIELD_PINOUT"));
+     //Serial.println(F("should appear in the library header (Elegoo_TFT.h)."));
+     //Serial.println(F("If using the breakout board, it should NOT be #defined!"));
+     //Serial.println(F("Also if using the breakout, double-check that all wiring"));
+     //Serial.println(F("matches the tutorial."));
      identifier=0x9328;
    }
    tft.begin(identifier);
@@ -481,7 +490,7 @@ void startUpTask() {
    keypadTaskControlBlock.myTask = keypadTask;
    keypadTaskControlBlock.taskDataPtr = (void*)&keypadData;
    keypadTaskControlBlock.next = NULL;
-   keypadTaskControlBlock.next = NULL;
+   keypadTaskControlBlock.prev = NULL;
    keypadTCB = &keypadTaskControlBlock;
 
    
@@ -494,8 +503,21 @@ void startUpTask() {
    statusTaskControlBlock.myTask = statusTask;
    statusTaskControlBlock.taskDataPtr = (void*)&statusData;
    statusTaskControlBlock.next = NULL;
-   statusTaskControlBlock.next = NULL;
+   statusTaskControlBlock.prev = NULL;
    statusTCB = &statusTaskControlBlock;
+
+   // 6.5 Remote Com
+   RemComData remData;
+   remData.tempRawBufPtr = &temperatureRawBuf[0];
+   remData.bpRawBufPtr = &bloodPressureRawBuf[0];;
+   remData.prRawBufPtr = &pulseRateRawBuf[0];
+   remData.rrRawBufPtr = &respirationRateRawBuf[0];
+   // TCB:
+   TCB remoteComTCB;
+   remoteComTCB.myTask = remoteComTask;
+   remoteComTCB.taskDataPtr = (void*)&remData;
+   remoteComTCB.next = NULL;
+   remoteComTCB.prev = NULL;
 
 
    // 7. Schedule
@@ -513,7 +535,7 @@ void startUpTask() {
    insertTask(measureTCB);
    insertTask(warningAlarmTCB);
    insertTask(displayTCB);
-
+   insertTask(&remoteComTCB);
 
    // Get the timer started
    // Enable timer2 interrupt
@@ -552,7 +574,7 @@ void scheduleTask(void* data) {
       deleteTask(computeTCB);  // deleteTask has protection and check if computeTCB is removed already.
     }else if (addComputeTaskFlag == 1) {
       // compute task has been added and scheduled by measureTask. add it in
-            Serial.print("add compute");
+            //Serial.print("add compute");
       insertTask(computeTCB);
       // increment the flag to be neutral
       addComputeTaskFlag++;
@@ -652,7 +674,7 @@ void measureTask(void* data) {
    }
    // It is our turn.
    timer = timeElapsed;
-   Serial.print("\nMeasureTask Starts\n");
+   //Serial.print("\nMeasureTask Starts\n");
    MeasureData* mData = (MeasureData*)data;
    unsigned int selections = *(mData->measurementSelectionPtr);
    
@@ -669,6 +691,7 @@ void measureTask(void* data) {
         freshTempCursor = (freshTempCursor - 1) % 8;
      }
      addComputeTaskFlag++;  // just add one. repetition has been delt with.
+     remoteScheduled = remoteScheduled | TEMP_SCEHDULED;
    }
 
    // Measure Blood Pressure
@@ -676,29 +699,20 @@ void measureTask(void* data) {
      // Measure Systolic
      unsigned char oldSBPCursor  = freshSBPCursor;
      freshSBPCursor  = (freshSBPCursor  + 1) % 8;
-     unsigned int oldSysData = mData->bpRawBufPtr[freshSBPCursor];
      requestAndReceive((char*)&(mData->bpRawBufPtr[oldSBPCursor]), sizeof(unsigned int), 
      (char*)&(mData->bpRawBufPtr[freshSBPCursor]), sizeof(unsigned int), MEASURE_TASK, SYSTO_RAW_SUBTASK);
-     if(compareData(mData->bpRawBufPtr[oldSBPCursor], mData->bpRawBufPtr[freshSBPCursor])) {
-        mData->bpRawBufPtr[freshSBPCursor] = oldSysData;
-        freshSBPCursor = (freshSBPCursor - 1) % 8;
-     }
      // Measure Diastolic
      unsigned char oldDBPCursor  = freshDBPCursor;
      freshDBPCursor  = ((freshDBPCursor + 1) % 8) + 8;
-     unsigned int oldDiasData = mData->bpRawBufPtr[freshDBPCursor];
      requestAndReceive((char*)&(mData->bpRawBufPtr[oldDBPCursor]), sizeof(unsigned int), 
      (char*)&(mData->bpRawBufPtr[freshDBPCursor]), sizeof(unsigned int), MEASURE_TASK, DIASTO_RAW_SUBTASK);
-     if(compareData(mData->bpRawBufPtr[oldDBPCursor], mData->bpRawBufPtr[freshDBPCursor])) {
-        mData->bpRawBufPtr[freshDBPCursor] = oldDiasData;
-        freshDBPCursor = (freshDBPCursor - 1) % 8 + 8;
-     }
      // do the systo alarm increment
      if (*(mData->mCountPtr) > 0) {
         // alarm is expecting us to count how many times we are called.
         *(mData->mCountPtr) = *(mData->mCountPtr) + 1;
      }
      addComputeTaskFlag++;  // just add one. repetition has been delt with.
+     remoteScheduled = remoteScheduled | BP_SCHEDULED;
    }
 
    // Measure Pulse Rate
@@ -714,6 +728,7 @@ void measureTask(void* data) {
         freshPulseCursor = (freshPulseCursor - 1) % 8;
      }
      addComputeTaskFlag++;  // just add one. repetition has been delt with.
+     remoteScheduled = remoteScheduled | PULSE_SCHEDULED;
    }
 
    // Measure Respiration Rate
@@ -729,12 +744,13 @@ void measureTask(void* data) {
         freshRespCursor = (freshRespCursor - 1) % 8;
      }
      addComputeTaskFlag++;  // just add one. repetition has been dealt with.
+     remoteScheduled = remoteScheduled | RESP_SCHEDULED;
    }
    
    // Wrap up. clear the selections. notify that the compute task needs to be scheduled
    *(mData->measurementSelectionPtr) = 0;
-   Serial.print((mData->rrRawBufPtr[freshPulseCursor]));
-   Serial.print("  MeasureTask Completes\n ");
+   //Serial.print((mData->rrRawBufPtr[freshPulseCursor]));
+   //Serial.print("  MeasureTask Completes\n ");
    return; // get out
 }
 
@@ -747,14 +763,14 @@ void computeTask(void* data) {
    }
    // It is our turn. do the compute. Then tell the scheduler to remove us
    timer = timeElapsed;
-   Serial.print("\nComputeTask Starts\n");
+   //Serial.print("\nComputeTask Starts\n");
    ComputeData* cData = (ComputeData*)data;
    // compute temp
    double tempCorrDump;
    requestAndReceive((char*)&(cData->tempRawBufPtr[freshTempCursor]),sizeof(unsigned int),
    (char*)&tempCorrDump, sizeof(double), COMPUTE_TASK, TEMP_RAW_SUBTASK);
-   Serial.print(tempCorrDump);
-   Serial.print(" is here\n");
+   //Serial.print(tempCorrDump);
+   //Serial.print(" is here\n");
    dtostrf(tempCorrDump, 1, 2, (char*)(cData->tempCorrectedBufPtr[freshTempCursor]));
    // compute systo
    unsigned int systoCorrDump;
@@ -778,7 +794,7 @@ void computeTask(void* data) {
    sprintf((char*)(cData->rrCorrectedBufPtr[freshRespCursor]), "%d", rrCorrDump);
    // done. now suicide
    addComputeTaskFlag = 0;
-   Serial.print("nComputeTask Completes\n");
+   //Serial.print("nComputeTask Completes\n");
    return; // getout
 }
 
@@ -910,6 +926,123 @@ void warningAlarmTask(void* data) {
 }
 
 
+/******************************************
+* function name: remoteComTask
+* function inputs: a pointer to the remoteComData
+* function outputs: None
+* function description: This function will act as
+*                       the communication unit
+*                       from a remote terminal to
+*                       this system
+*                       * has to be form : "X?U"
+*                       * Error code:  1: unkown header
+*                                      2: unknown measurement option
+*                                      3: unkown footer
+*                                      4: request missing
+*                                      5: footer missing
+* author: Matt
+******************************************/
+void remoteComTask(void* data){
+  RemComData* remData = (RemComData*)data;
+  if (remoteScheduled!=0){
+    // send the last data we got and thats it.
+    if (remoteScheduled & TEMP_SCEHDULED) {
+        toTerminal((remData->tempRawBufPtr[freshTempCursor]),'T', '=');
+   }
+   if (remoteScheduled & BP_SCHEDULED) {
+         // Render BP
+         toTerminal((remData->bpRawBufPtr[freshSBPCursor]),'S', '=');
+         toTerminal((remData->bpRawBufPtr[freshDBPCursor]),'D', '=');
+   }
+   if (remoteScheduled & PULSE_SCHEDULED) {
+          //render temp
+         toTerminal((remData->prRawBufPtr[freshPulseCursor]),'P', '=');
+   }
+   if (remoteScheduled & RESP_SCHEDULED) {
+         toTerminal((remData->rrRawBufPtr[freshRespCursor]),'R', '=');
+   }
+   remoteScheduled = 0;
+   return;
+  }
+  // checks the readin stuffs from the Serial0(Serial)
+  if (Serial.available()<1) {
+    // nothing to be read, get out
+    return;
+  }
+  // there is something coming in
+  char header = Serial.read();
+  if (header != 'X'){
+    // it is not a good request. take the char and get out
+    // also notify that it is a bad one. please retry
+//    Serial.write('E');
+//    Serial.write('R');
+//    Serial.write('R');
+//    Serial.write(':');
+//    Serial.write('1');
+//    Serial.write('\n');
+    return;
+  }
+  if (Serial.available()<1){
+    // request is missing
+    Serial.write('E');
+    Serial.write('R');
+    Serial.write('R');
+    Serial.write(':');
+    Serial.write('4');
+    Serial.write('\n');
+    return;
+  }
+  char reqChar = Serial.read();
+  if (Serial.available()<1) {
+     // footer missing
+    Serial.write('E');
+    Serial.write('R');
+    Serial.write('R');
+    Serial.write(':');
+    Serial.write('5');
+    Serial.write('\n');
+     return;
+  }
+  // there is something coming in
+  char footer = Serial.read();
+  if (footer != 'U'){
+    // Unknown Footer
+    Serial.write('E');
+    Serial.write('R');
+    Serial.write('R');
+    Serial.write(':');
+    Serial.write('3');
+    Serial.write('\n');
+    return;
+  }
+  // it is a request, deal with it 
+  switch(reqChar){ 
+      case 'T':                                         // Case 1: temperatureRaw
+        measurementSelection = measurementSelection | TEMP_SCEHDULED;
+        break;
+      case 'B':                                         // Case 2: systolicPressRaw    
+        measurementSelection = measurementSelection | BP_SCHEDULED;
+        break;    
+      case 'P':                                         // Case 3: diastolicCaseRaw
+        measurementSelection = measurementSelection | PULSE_SCHEDULED;
+        break;  
+      case 'R':                                         // Case 4: pulseRateRaw
+        measurementSelection = measurementSelection | RESP_SCHEDULED;
+        break; 
+      default:                                         // Case 5: respirationRateRaw
+        Serial.write('E');
+        Serial.write('R');
+        Serial.write('R');
+        Serial.write(':');
+        Serial.write('2');
+        Serial.write('\n');
+        return;
+ }  
+ Serial.write('R');
+ Serial.write('E');
+ Serial.write('S');
+ Serial.write(':');
+}
 
 /******************************************
 * function name: displayTask
@@ -1124,13 +1257,13 @@ void statusTask(void* data) {
    }
    // It is our turn. get the status
    timer = timeElapsed;
-   Serial.print("For Status--- \n");
+   //Serial.print("For Status--- \n");
    StatusData* statusData = (StatusData*)data;
    requestAndReceive((char*)(statusData->batteryState),sizeof(unsigned short), (char*)(statusData->batteryState),sizeof(unsigned short), STATUS_TASK , STATUS_TASK );
    if (*(statusData->batteryState)==0) {
     *(statusData->batteryState) = FULL_BATTERY;  // Magical Recharge
    }
-   Serial.println(" Finished\n");
+   //Serial.println(" Finished\n");
    return;
 }
 
@@ -1183,6 +1316,29 @@ void requestAndReceive(char* inputBuffer, char inputLength , char* outputBuffer,
   }
   for (char j = 0; j<outputLength; j++) {
      outputBuffer[j]=Serial1.read();
+  }
+  return;
+}
+
+
+/******************************************
+* function name: toTerminal
+* function inputs:  char* to set input buffer,
+*         char to represent input buffer length
+*         char* for output buffer,
+* function outputs: None
+* function description: This function will write to Serial Monitor
+* author: Matt
+******************************************/ 
+void toTerminal(unsigned int inputBuffer, char taskType, char subTaskType) {
+  // write the taskType and subtype to the UNO
+  Serial.write(taskType);
+  Serial.write(subTaskType);
+  // write the data that needed to be passed
+  char dump[10];
+  sprintf(dump, "%d", inputBuffer);
+  for (char i = 0; i<strlen(dump); i++) {
+    Serial.write(dump[i]);
   }
   return;
 }
