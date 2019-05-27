@@ -26,7 +26,7 @@
 #define DIAS_PRESS_DISP_WIDTH 6
 #define PULSE_PRESS_DISP_WIDTH 3
 #define RESP_DISP_WIDTH 3
-#define TEMP_SCEHDULED 1
+#define TEMP_SCHEDULED 1
 #define BP_SCHEDULED 2
 #define PULSE_SCHEDULED 4
 #define RESP_SCHEDULED 8
@@ -199,8 +199,8 @@ TouchScreen ts = TouchScreen(XP, YP ,XM , YM, 300);
 
 
 // Globals for keypad and ack
-unsigned char ackReceived = 0;
-unsigned char mCount = 0; 
+unsigned char ackReceived[4];
+unsigned char mCount[4]; 
 unsigned char modeSelection = 1;  // 0 means menu   1 anounciation
 // Global Variables for Measurements
 unsigned int temperatureRawBuf[8] = {75,0,0,0,0,0,0,0};
@@ -241,6 +241,7 @@ unsigned char bpOutOfRange = 0;
 unsigned char tempOutOfRange = 0;
 unsigned char pulseOutOfRange = 0;
 unsigned char respOutOfRange = 0;
+unsigned long flasherTimer[4];
 //Global Variables for Warning
 Bool bpHigh = FALSE;
 Bool tempHigh = FALSE;
@@ -258,6 +259,7 @@ TCB* statusTCB = NULL;
 SchedulerData* schedulerTaskQueue = NULL;
 unsigned char addComputeTaskFlag = 0; // 0 for delete 1 for add, above means neutral so boldly incrementing is fine (^o^)
 unsigned long timeElapsed = 0;
+unsigned int flasherIndicator = 0;
 
 
 /******************************************
@@ -355,12 +357,17 @@ void startUpTask() {
    measureData.prRawBufPtr = &pulseRateRawBuf[0];
    measureData.rrRawBufPtr = &respirationRateRawBuf[0];
    measureData.measurementSelectionPtr = &measurementSelection;
-   measureData.mCountPtr = &mCount;
+   measureData.mCountPtr = mCount;
    freshTempCursor = 0;
    freshSBPCursor = 0;
    freshDBPCursor = 8;
    freshPulseCursor = 0;
    freshRespCursor = 0;
+   mCount[0] = 0; mCount[1]=0; mCount[2]=0; mCount[3]=0;
+   ackReceived[0] = 0; ackReceived[1]=0; ackReceived[2]=0; ackReceived[3]=0;
+   flasherTimer[0] = 0; flasherTimer[1]=0; flasherTimer[2]=0; flasherTimer[3]=0;
+
+
    //TCB:
    TCB measureTCBlock;
    measureTCBlock.taskDataPtr = (void*)&measureData;
@@ -424,13 +431,13 @@ void startUpTask() {
    warningAlarmData.rrLowPtr = &rrLow;
    warningAlarmData.rrHighPtr = &rrHigh;
    warningAlarmData.batteryState = &batteryState;
-   warningAlarmData.ackReceived = &ackReceived;
+   warningAlarmData.ackReceived = ackReceived;
    warningAlarmData.tempColorPtr = &tempColor;
    warningAlarmData.systoColorPtr = &systoColor;
    warningAlarmData.diastoColorPtr = &diastoColor;
    warningAlarmData.pulseColorPtr = &pulseColor;
    warningAlarmData.respColorPtr = &respColor;
-   warningAlarmData.mCountPtr = &mCount;
+   warningAlarmData.mCountPtr = mCount;
 
    // TCB:
    TCB warningAlarmTCBlock;
@@ -455,7 +462,7 @@ void startUpTask() {
    displayData.respColorPtr = &respColor;
    displayData.modeSelection = &modeSelection;
    displayData.measurementSelectionPtr = &measurementSelection;  
-   displayData.ackReceived = &ackReceived;
+   displayData.ackReceived = ackReceived;
 
    // TCB:
    TCB displayTaskControlBlock;
@@ -483,7 +490,7 @@ void startUpTask() {
    // data:
    KeypadData keypadData;
    keypadData.measurementSelectionPtr = &measurementSelection;  
-   keypadData.ackReceived = &ackReceived;
+   keypadData.ackReceived = ackReceived;
    keypadData.modeSelection = &modeSelection;
    // TCB:
    TCB keypadTaskControlBlock;
@@ -679,7 +686,7 @@ void measureTask(void* data) {
    unsigned int selections = *(mData->measurementSelectionPtr);
    
    // run the measurement that has been scheduled.
-   if (selections & TEMP_SCEHDULED) {
+   if (selections & TEMP_SCHEDULED) {
      // measure temperature
      unsigned char oldTempCursor = freshTempCursor;
      freshTempCursor = (freshTempCursor + 1) % 8;
@@ -690,8 +697,12 @@ void measureTask(void* data) {
         mData->tempRawBufPtr[freshTempCursor] = oldTempData;
         freshTempCursor = (freshTempCursor - 1) % 8;
      }
+     if (mData->mCountPtr[0] > 0) {
+        // alarm is expecting us to count how many times we are called.
+        mData->mCountPtr[0] = mData->mCountPtr[0] + 1;
+     }
      addComputeTaskFlag++;  // just add one. repetition has been delt with.
-     remoteScheduled = remoteScheduled | TEMP_SCEHDULED;
+     remoteScheduled = remoteScheduled | TEMP_SCHEDULED;
    }
 
    // Measure Blood Pressure
@@ -707,9 +718,9 @@ void measureTask(void* data) {
      requestAndReceive((char*)&(mData->bpRawBufPtr[oldDBPCursor]), sizeof(unsigned int), 
      (char*)&(mData->bpRawBufPtr[freshDBPCursor]), sizeof(unsigned int), MEASURE_TASK, DIASTO_RAW_SUBTASK);
      // do the systo alarm increment
-     if (*(mData->mCountPtr) > 0) {
+     if (mData->mCountPtr[2] > 0) {
         // alarm is expecting us to count how many times we are called.
-        *(mData->mCountPtr) = *(mData->mCountPtr) + 1;
+        mData->mCountPtr[2] = mData->mCountPtr[2] + 1;
      }
      addComputeTaskFlag++;  // just add one. repetition has been delt with.
      remoteScheduled = remoteScheduled | BP_SCHEDULED;
@@ -727,6 +738,10 @@ void measureTask(void* data) {
         mData->prRawBufPtr[freshPulseCursor] = oldPulseData;
         freshPulseCursor = (freshPulseCursor - 1) % 8;
      }
+     if (mData->mCountPtr[1] > 0) {
+        // alarm is expecting us to count how many times we are called.
+        mData->mCountPtr[1] = mData->mCountPtr[1] + 1;
+     }
      addComputeTaskFlag++;  // just add one. repetition has been delt with.
      remoteScheduled = remoteScheduled | PULSE_SCHEDULED;
    }
@@ -742,6 +757,10 @@ void measureTask(void* data) {
      if(compareData(mData->rrRawBufPtr[oldRespCursor], mData->rrRawBufPtr[freshRespCursor])) {
         mData->rrRawBufPtr[freshRespCursor] = oldRespData;
         freshRespCursor = (freshRespCursor - 1) % 8;
+     }
+     if (mData->mCountPtr[3] > 0) {
+        // alarm is expecting us to count how many times we are called.
+        mData->mCountPtr[3] = mData->mCountPtr[3] + 1;
      }
      addComputeTaskFlag++;  // just add one. repetition has been dealt with.
      remoteScheduled = remoteScheduled | RESP_SCHEDULED;
@@ -859,66 +878,191 @@ void warningAlarmTask(void* data) {
   if (*(wData->tempOutOfRangePtr)) {
     // out
     *(wData->tempColorPtr) = ORANGE;
+    if (*(wData->tempOutOfRangePtr) == 2){
+      flasherIndicator = flasherIndicator | TEMP_SCHEDULED;
+    }else{
+      flasherIndicator = flasherIndicator & (~TEMP_SCHEDULED);
+    }
   } else {
     // good
     *(wData->tempColorPtr) = GREEN;
+    flasherIndicator = flasherIndicator & (~TEMP_SCHEDULED);
   }
   // general pressure
   if (*(wData->bpOutOfRangePtr)) {
     // out
     *(wData->systoColorPtr) = ORANGE;
     *(wData->diastoColorPtr) = ORANGE;
+    if (*(wData->bpOutOfRangePtr) == 2){
+      flasherIndicator = flasherIndicator | BP_SCHEDULED;
+    }else{
+      flasherIndicator = flasherIndicator & (~BP_SCHEDULED);
+    }
   } else {
     // good
     *(wData->systoColorPtr) = GREEN;
     *(wData->diastoColorPtr) = GREEN;
+    flasherIndicator = flasherIndicator & (~BP_SCHEDULED);
   }
   // pulse rate
   if (*(wData->pulseOutOfRangePtr)) {
     // out
     *(wData->pulseColorPtr) = ORANGE;
+    if (*(wData->pulseOutOfRangePtr) == 2){
+      flasherIndicator = flasherIndicator | PULSE_SCHEDULED;
+    }else{
+      flasherIndicator = flasherIndicator & (~PULSE_SCHEDULED);
+    }
   } else {
     // good
     *(wData->pulseColorPtr) = GREEN;
+    flasherIndicator = flasherIndicator & (~PULSE_SCHEDULED);
   }
   // respiration rate
   if (*(wData->respOutOfRangePtr)) {
     // out
     *(wData->respColorPtr) = ORANGE;
+    if (*(wData->respOutOfRangePtr) == 2){
+      flasherIndicator = flasherIndicator | RESP_SCHEDULED;
+    }else{
+      flasherIndicator = flasherIndicator & (~RESP_SCHEDULED);
+    }
   } else {
     // good
     *(wData->respColorPtr) = GREEN;
+    flasherIndicator = flasherIndicator & (~RESP_SCHEDULED);
   }
+
+  
   // Special Case for Systolic
   if ((!sysAlarmResult) && (sysWarnResult == FALSE)) {
     // it is actually ok now
     *(wData->systoColorPtr) = GREEN;
-    *(wData->ackReceived) = 0;
-    *(wData->mCountPtr) = 0;
+    wData->ackReceived[2] = 0;
+    wData->mCountPtr[2] = 0;
   } else {
     if (sysAlarmResult) {
       // it is at least out of range
-      if (*(wData->mCountPtr)>6) {
+      if ((wData->mCountPtr[2])>6) {
         // wait, it has been out for 5 measurements
         *(wData->systoColorPtr) = RED;
       } else {
         // it is still fine now
         *(wData->systoColorPtr) = ORANGE;
-
       }
     }
     if (sysWarnResult == TRUE) {
       // we are too high. have we received an ack yet?
-      if (*(wData->ackReceived)) {
+      if (wData->ackReceived[2]) {
         // yes. so lets get the mCount going
-        if (*(wData->mCountPtr) == 0) {
+        if (wData->mCountPtr[2] == 0) {
           // if it was zero, start it. otherwise, it has started so leave it be.
-          *(wData->mCountPtr) = 1;
+          wData->mCountPtr[2] = 1;
         }
         // make it the same fashion as out of range. so thats it
       } else {
         // not acked. make it red
         *(wData->systoColorPtr) = RED;
+      } 
+    }
+  }
+
+   // Special Case for Temp
+  if (!(*(wData->tempOutOfRangePtr)) && (*(wData->tempHighPtr) == FALSE)) {
+    // it is actually ok now
+    *(wData->tempColorPtr) = GREEN;
+    wData->ackReceived[0] = 0;
+    wData->mCountPtr[0] = 0;
+  } else {
+    if (*(wData->tempOutOfRangePtr)) {
+      // it is at least out of range
+      if ((wData->mCountPtr[0])>6) {
+        // wait, it has been out for 5 measurements
+        *(wData->tempColorPtr) = RED;
+      } else {
+        // it is still fine now
+        *(wData->tempColorPtr) = ORANGE;
+      }
+    }
+    if (*(wData->tempHighPtr) == TRUE) {
+      // we are too high. have we received an ack yet?
+      if (wData->ackReceived[0]) {
+        // yes. so lets get the mCount going
+        if (wData->mCountPtr[0] == 0) {
+          // if it was zero, start it. otherwise, it has started so leave it be.
+          wData->mCountPtr[0] = 1;
+        }
+        // make it the same fashion as out of range. so thats it
+      } else {
+        // not acked. make it red
+        *(wData->tempColorPtr) = RED;
+      } 
+    }
+  }
+
+   // Special Case for pulse
+     // Special Case for Temp
+  if (!(*(wData->pulseOutOfRangePtr)) && (*(wData->pulseLowPtr) == FALSE)) {
+    // it is actually ok now
+    *(wData->pulseColorPtr) = GREEN;
+    wData->ackReceived[1] = 0;
+    wData->mCountPtr[1] = 0;
+  } else {
+    if (*(wData->pulseOutOfRangePtr)) {
+      // it is at least out of range
+      if ((wData->mCountPtr[1])>6) {
+        // wait, it has been out for 5 measurements
+        *(wData->pulseColorPtr) = RED;
+      } else {
+        // it is still fine now
+        *(wData->pulseColorPtr) = ORANGE;
+      }
+    }
+    if (*(wData->pulseLowPtr) == TRUE) {
+      // we are too high. have we received an ack yet?
+      if (wData->ackReceived[1]) {
+        // yes. so lets get the mCount going
+        if (wData->mCountPtr[1] == 0) {
+          // if it was zero, start it. otherwise, it has started so leave it be.
+          wData->mCountPtr[1] = 1;
+        }
+        // make it the same fashion as out of range. so thats it
+      } else {
+        // not acked. make it red
+        *(wData->pulseColorPtr) = RED;
+      } 
+    }
+  }
+  
+   // Special Case for Resp
+  if (!(*(wData->respOutOfRangePtr)) && (*(wData->rrLowPtr) == FALSE)) {
+    // it is actually ok now
+    *(wData->respColorPtr) = GREEN;
+    wData->ackReceived[3] = 0;
+    wData->mCountPtr[3] = 0;
+  } else {
+    if (*(wData->respOutOfRangePtr)) {
+      // it is at least out of range
+      if ((wData->mCountPtr[3])>6) {
+        // wait, it has been out for 5 measurements
+        *(wData->respColorPtr) = RED;
+      } else {
+        // it is still fine now
+        *(wData->respColorPtr) = ORANGE;
+      }
+    }
+    if (*(wData->rrLowPtr) == TRUE) {
+      // we are too high. have we received an ack yet?
+      if (wData->ackReceived[3]) {
+        // yes. so lets get the mCount going
+        if (wData->mCountPtr[3] == 0) {
+          // if it was zero, start it. otherwise, it has started so leave it be.
+          wData->mCountPtr[3] = 1;
+        }
+        // make it the same fashion as out of range. so thats it
+      } else {
+        // not acked. make it red
+        *(wData->respColorPtr) = RED;
       } 
     }
   }
@@ -946,7 +1090,7 @@ void remoteComTask(void* data){
   RemComData* remData = (RemComData*)data;
   if (remoteScheduled!=0){
     // send the last data we got and thats it.
-    if (remoteScheduled & TEMP_SCEHDULED) {
+    if (remoteScheduled & TEMP_SCHEDULED) {
         toTerminal((remData->tempRawBufPtr[freshTempCursor]),'T', '=');
    }
    if (remoteScheduled & BP_SCHEDULED) {
@@ -1018,7 +1162,7 @@ void remoteComTask(void* data){
   // it is a request, deal with it 
   switch(reqChar){ 
       case 'T':                                         // Case 1: temperatureRaw
-        measurementSelection = measurementSelection | TEMP_SCEHDULED;
+        measurementSelection = measurementSelection | TEMP_SCHEDULED;
         break;
       case 'B':                                         // Case 2: systolicPressRaw    
         measurementSelection = measurementSelection | BP_SCHEDULED;
@@ -1069,7 +1213,7 @@ void displayTask(void* data) {
        // display menu
        unsigned int selections = *(dData->measurementSelectionPtr);
        // render the buttons 
-       if (selections & TEMP_SCEHDULED) {
+       if (selections & TEMP_SCHEDULED) {
           //render temp
          menuButton[0].drawButton(true);
        } else {
@@ -1096,13 +1240,24 @@ void displayTask(void* data) {
    }else if (*(dData->modeSelection) == 1) {
        // display annunc stuffs
        tft.setCursor(0,0);
-                 tft.println(" ");
+       tft.println(" ");
 
        // Display Temperature
        tft.setTextColor(STATIC_TEXT_COLOR);
        tft.print(" Temperature:");
        // Show the Temprature
-       tft.setTextColor(*(dData->tempColorPtr),BACKGROUND_COLOR);
+       if (flasherIndicator & TEMP_SCHEDULED) {
+          // we need to flash
+          static long tempFtimer = 0;
+          if (tempFtimer!=0 && (millis()-tempFtimer)<1000) {
+              tft.setTextColor(*(dData->tempColorPtr),BACKGROUND_COLOR);
+          }else{
+              tft.setTextColor(BACKGROUND_COLOR,BACKGROUND_COLOR);
+              tempFtimer = millis();
+          }
+       }else{
+          tft.setTextColor(*(dData->tempColorPtr),BACKGROUND_COLOR);
+       }
        tft.print((char*)(dData->tempCorrectedBufPtr[freshTempCursor]));
        int diff = TEMP_DISP_WIDTH - strlen((char*)(dData->tempCorrectedBufPtr[freshTempCursor]));
        for (int i = 0; i<diff; i++) {
@@ -1114,7 +1269,18 @@ void displayTask(void* data) {
        tft.setTextColor(STATIC_TEXT_COLOR);
        tft.println(" Pressure:");
        tft.print("   Systolic: ");
-       tft.setTextColor(*(dData->systoColorPtr),BACKGROUND_COLOR);
+       if (flasherIndicator & BP_SCHEDULED) {
+          // we need to flash
+          static long bpSFtimer = 0;
+          if (bpSFtimer!=0 && (millis()-bpSFtimer)<500) {
+              tft.setTextColor(*(dData->systoColorPtr),BACKGROUND_COLOR);
+          }else{
+              tft.setTextColor(BACKGROUND_COLOR,BACKGROUND_COLOR);
+              bpSFtimer = millis();
+          }
+       }else{
+          tft.setTextColor(*(dData->systoColorPtr),BACKGROUND_COLOR);
+       }
        tft.print((char*)(dData->bpCorrectedBufPtr[freshSBPCursor]));
        tft.print(".00");
        diff = SYS_PRESS_DISP_WIDTH-strlen((char*)(dData->bpCorrectedBufPtr[freshSBPCursor]));
@@ -1127,7 +1293,19 @@ void displayTask(void* data) {
        tft.setTextColor(STATIC_TEXT_COLOR);
        tft.print("   Diastolic:");
        // Show the Dias Pressure
-       tft.setTextColor(*(dData->diastoColorPtr),BACKGROUND_COLOR);
+        if (flasherIndicator & BP_SCHEDULED) {
+          // we need to flash
+          static long bpDFtimer = 0;
+          if (bpDFtimer!=0 && (millis()-bpDFtimer)<500) {
+              tft.setTextColor(*(dData->diastoColorPtr),BACKGROUND_COLOR);
+          }else{
+              tft.setTextColor(BACKGROUND_COLOR,BACKGROUND_COLOR);
+              bpDFtimer = millis();
+          }
+       }else{
+          tft.setTextColor(*(dData->diastoColorPtr),BACKGROUND_COLOR);
+       }
+       
        tft.print((char*)(dData->bpCorrectedBufPtr[freshDBPCursor]));
        diff = DIAS_PRESS_DISP_WIDTH-strlen((char*)(dData->bpCorrectedBufPtr[freshDBPCursor]));
        for (int i = 0; i<diff; i++) {
@@ -1138,8 +1316,20 @@ void displayTask(void* data) {
        // Display Pulse
        tft.setTextColor(STATIC_TEXT_COLOR);
        tft.print(" Pulse rate: ");
+       // Show the Dias Pressure
+        if (flasherIndicator & PULSE_SCHEDULED) {
+          // we need to flash
+          static long pulseFtimer = 0;
+          if (pulseFtimer!=0 && (millis()-pulseFtimer)<2000) {
+              tft.setTextColor(*(dData->pulseColorPtr),BACKGROUND_COLOR);
+          }else{
+              tft.setTextColor(BACKGROUND_COLOR,BACKGROUND_COLOR);
+              pulseFtimer = millis();
+          }
+       }else{
+          tft.setTextColor(*(dData->pulseColorPtr),BACKGROUND_COLOR);
+       }
        // Show the PulseRate
-       tft.setTextColor(*(dData->pulseColorPtr),BACKGROUND_COLOR);
        tft.print((char*)(dData->prCorrectedBufPtr[freshPulseCursor]));
        diff = PULSE_PRESS_DISP_WIDTH-strlen((char*)(dData->prCorrectedBufPtr[freshPulseCursor]));
        for (int i = 0; i<diff; i++) {
@@ -1172,11 +1362,7 @@ void displayTask(void* data) {
        sprintf(batteryStateBuffer, "%d  ",*(dData->batteryState));
        tft.print(batteryStateBuffer);
        // render the ackButton
-       if (*(dData->ackReceived)) {
-         ackButton.drawButton(true);
-       } else {
-         ackButton.drawButton(false);
-       }
+       ackButton.drawButton(false);
        // Thats all
    }
 
@@ -1226,7 +1412,7 @@ void keypadTask(void* data) {
     // check if the menu select button is clicked
     if ((*(kData->modeSelection) == 0) && (menuButton[0].contains(x2,y2))) {
       // temp selected
-      *(kData->measurementSelectionPtr) = *(kData->measurementSelectionPtr) | TEMP_SCEHDULED;
+      *(kData->measurementSelectionPtr) = *(kData->measurementSelectionPtr) | TEMP_SCHEDULED;
     } else
     if ((*(kData->modeSelection) == 0) && (menuButton[1].contains(x2,y2))) {
       // blood pressure selected
@@ -1243,7 +1429,18 @@ void keypadTask(void* data) {
     // check if the ack button is clicked
     if ((*(kData->modeSelection) == 1) && (ackButton.contains(x2,y2))) {
       //acked
-      *(kData->ackReceived) = 1;
+      if (tempColor == RED){
+        kData->ackReceived[0] = 1;
+      }
+      if (systoColor == RED){
+        kData->ackReceived[2] = 1;
+      }
+      if (pulseColor == RED){
+        kData->ackReceived[1] = 1;
+      }
+      if (respColor == RED){
+        kData->ackReceived[3] = 1;
+      }
     }
    }
 }
@@ -1340,6 +1537,7 @@ void toTerminal(unsigned int inputBuffer, char taskType, char subTaskType) {
   for (char i = 0; i<strlen(dump); i++) {
     Serial.write(dump[i]);
   }
+  Serial.write('\n');
   return;
 }
 
