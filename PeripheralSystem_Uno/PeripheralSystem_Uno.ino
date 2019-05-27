@@ -1,7 +1,8 @@
 #define BASE_TEN_BASE 10
 #define PR_PIN_IN 2
-#define RR_PIN_IN 3
-#define DELAY_TIME 3
+#define RR_PIN_IN 2
+#define DELAY_TIME 2
+#define BP_PIN_IN 3
 
 // function headers
 void setup();
@@ -39,20 +40,13 @@ char rrHigh(unsigned int data);
 int tempCount;
 int tempFlag;
 int tempMultiplier;
-int systCount;
-int diastCount;
-bool systolicFlag;
-bool diastolicFlag;
-bool systoInitialized;
-bool diasInitialized;
-unsigned int systoInitial;
-unsigned int diastoInitial;
-volatile byte PRcounter;
-volatile byte RRcounter;
+volatile byte PRcount;
+volatile byte RRcount;
+volatile byte BPcount;
+unsigned int BPFlag;
 unsigned long passedTime; 
-unsigned int pulseRateData;
-unsigned int respRateData; 
-
+unsigned int diasMeasure;
+unsigned int sysMeasure;
 
 /******************************************
 * Function Name: setup
@@ -74,24 +68,21 @@ void setup()
   detachInterrupt(digitalPinToInterrupt(RR_PIN_IN));
   attachInterrupt(digitalPinToInterrupt(PR_PIN_IN), isrPR, RISING);
   detachInterrupt(digitalPinToInterrupt(PR_PIN_IN));
+  attachInterrupt(digitalPinToInterrupt(BP_PIN_IN), isrBP, FALLING);
+  detachInterrupt(digitalPinToInterrupt(PR_PIN_IN));
   pinMode(PR_PIN_IN, INPUT_PULLUP); 
   pinMode(RR_PIN_IN, INPUT_PULLUP);
-  PRcounter = 0; 
-  RRcounter = 0;
-  pulseRateData = 0;
-  respRateData = 0; 
+  pinMode(BP_PIN_IN, INPUT_PULLUP);
+  BPFlag = 1;
+  BPcount = 80;
+  PRcount = 0; 
+  RRcount = 0;
   passedTime = 0; 
   tempCount = 0;
-  systCount = 0;
-  diastCount = 0;
-  systolicFlag = false;
-  diastolicFlag = false;
   tempMultiplier = -1;
   tempFlag = 0;
-  systoInitialized = 0;
-  diasInitialized = 0;
-  systoInitial = 0;
-  diastoInitial = 0;
+  diasMeasure = 0;
+  sysMeasure = 1;
 }
 
 /******************************************
@@ -136,7 +127,6 @@ void taskDispatcher(byte task,  byte subtask){
   // Compute = 2
   // Alarm   = 3
   // Status  = 4
-   
   unsigned int dataIntType;
   unsigned short dataShortType;
   unsigned int returnIntDump;
@@ -151,16 +141,16 @@ void taskDispatcher(byte task,  byte subtask){
           returnIntDump = temperature(dataIntType);
           break;
         case 2:                                         // Case 2: systolicPressRaw    
-          returnIntDump = systolicPress(dataIntType);
-          break;    
+          returnIntDump = bloodPressure();
+          break;
         case 3:                                         // Case 3: diastolicCaseRaw
-          returnIntDump = diastolicPress(dataIntType);
+          returnIntDump = bloodPressure();
           break;  
         case 4:                                         // Case 4: pulseRateRaw
-          returnIntDump = pulseRate(dataIntType);
+          returnIntDump = pulseRate();
           break; 
         case 5:                                         // Case 5: respirationRateRaw
-          returnIntDump = pulseRate(dataIntType);
+          returnIntDump = pulseRate();
           break;
       }
       writeBack((char*)&returnIntDump, sizeof(unsigned int));
@@ -253,8 +243,6 @@ void taskDispatcher(byte task,  byte subtask){
 ******************************************/
 unsigned int temperature(unsigned int data)
 {
-  // What should happen when it is over 50. it should start ticking down right?
-
   // start with going up. Hit 50->reverse Hit15->reverse
   if ((data>50 || data<15) && tempFlag == 1){ // reverse
     tempMultiplier = -tempMultiplier;
@@ -273,8 +261,13 @@ unsigned int temperature(unsigned int data)
   return data; 
 }
 
+void isrBP() 
+{
+  BPcount += (0.9 + 0.2 * BPFlag) * BPcount;
+}
+
 /******************************************
-* Function Name: systolicPress
+* Function Name: bloodPressure
 * Function Inputs: Integer of raw data
 * Function Outputs: Integer of processed data
 * Function Description: Increase or decrease the systolic
@@ -283,51 +276,29 @@ unsigned int temperature(unsigned int data)
 *           call count.
 * Author: Matt, Michael, Eun Tae
 ******************************************/
-unsigned int systolicPress(unsigned int data) {
-  if (systoInitialized == 0){
-    systoInitial = data;
-    systoInitialized = 1; 
+unsigned int bloodPressure() {
+  attachInterrupt(digitalPinToInterrupt(PR_PIN_IN), isrBP, FALLING);
+  passedTime = millis();
+  // Timeout occurs after 30 seconds of measurement
+  // Interrupt will block out Uno process for that duration
+  // If the measurement is done before Timeout, it will exit the 
+  // loop and return the value
+  while(millis() - passedTime <= 30000) {
+    unsigned int bloodPressureData = floor(BPcount);
+    if(BPcount <= 150 && BPcount >= 110 && !sysMeasure) {
+      sysMeasure = 1;
+      diasMeasure = 0;
+      detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
+      break;
+    } else if (BPcount <= 80 && BPcount >= 50 && !diasMeasure){
+      sysMeasure = 0;
+      diasMeasure = 1;
+      BPcount = 80;
+      detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
+      break;
+    }
   }
-  if(data > 100) {
-    data = systoInitial;
-  }
-  systolicFlag = false;
-  if(systCount % 2 == 0) {
-    data += 3;
-  } else {
-    data--;
-  }
-  systCount++;
-  return data;
-}
-
-/******************************************
-* Function Name: diastolicPress
-* Function Inputs: Integer of raw data
-* Function Outputs: Integer of processed data
-* Function Description: Increase or decrease the diastolic
-*           pressure for each function call
-*           based on the current value and function
-*           call count.
-* Author: Matt, Michael, Eun Tae
-******************************************/
-unsigned int diastolicPress(unsigned int data) {
-  //if (diastolicFlag == false || sys 
-  if (diasInitialized == 0){
-    diastoInitial = data;
-    diasInitialized = 1; 
-  }
-  if(data < 40) {
-    data = diastoInitial;
-  }
-  diastolicFlag = false;
-  if(diastCount % 2 == 0) {
-    data -= 2;
-  } else {
-    data++;
-  }
-  diastCount++;
-  return data;
+  return bloodPressureData;
 }
 
 /*******************************
@@ -341,7 +312,7 @@ unsigned int diastolicPress(unsigned int data) {
  ************************************/
 void isrPR() 
 { 
-  PRcounter++;
+  PRcount++;
 }
 
 /******************************************
@@ -354,12 +325,12 @@ void isrPR()
 *           call count.
 * Author: Matt, Michael, Eun Tae
 ******************************************/
-unsigned int pulseRate(unsigned int data)
+unsigned int pulseRate()
 {
   attachInterrupt(digitalPinToInterrupt(PR_PIN_IN), isrPR, RISING);
   delay(1000 * DELAY_TIME);
-  pulseRateData = (60000 /(1000 * DELAY_TIME) * (PRcounter));
-  PRcounter = 0;
+  unsigned int pulseRateData = (60000 /(1000 * DELAY_TIME) * (PRcount));
+  PRcount = 0;
   detachInterrupt(digitalPinToInterrupt(PR_PIN_IN));
   return pulseRateData;
 }
@@ -374,14 +345,14 @@ unsigned int pulseRate(unsigned int data)
  *                       
  ************************************/
 void isrRR() {
-  RRcounter++;
+  RRcount++;
 }
 
-unsigned int respRate(unsigned int data) {
+unsigned int respRate() {
   attachInterrupt(digitalPinToInterrupt(RR_PIN_IN), isrRR, RISING);
   delay(1000 * DELAY_TIME);
-  pulseRateData = (60000 /(1000 * DELAY_TIME) * (RRcounter)) - 20;
-  RRcounter = 0;
+  unsigned int respRateData = (60000 /(1000 * DELAY_TIME) * (RRcount)) - 20;
+  RRcount = 0;
   detachInterrupt(digitalPinToInterrupt(RR_PIN_IN));
   return respRateData;
 }
