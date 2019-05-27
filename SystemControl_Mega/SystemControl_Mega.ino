@@ -1115,7 +1115,6 @@ void keypadTask(void* data) {
    }
 }
 
-
 void statusTask(void* data) {
     // TIMING MECH
    static unsigned long timer = 0;
