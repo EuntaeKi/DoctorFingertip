@@ -655,51 +655,82 @@ void measureTask(void* data) {
    Serial.print("\nMeasureTask Starts\n");
    MeasureData* mData = (MeasureData*)data;
    unsigned int selections = *(mData->measurementSelectionPtr);
+   
    // run the measurement that has been scheduled.
    if (selections & TEMP_SCEHDULED) {
      // measure temperature
      unsigned char oldTempCursor = freshTempCursor;
      freshTempCursor = (freshTempCursor + 1) % 8;
+     unsigned int oldTempData = mData->tempRawBufPtr[freshTempCursor];
      requestAndReceive((char*)&(mData->tempRawBufPtr[oldTempCursor]), sizeof(unsigned int), 
      (char*)&(mData->tempRawBufPtr[freshTempCursor]),sizeof(unsigned int), MEASURE_TASK, TEMP_RAW_SUBTASK);
-        addComputeTaskFlag++;  // just add one. repetition has been delt with.
-
+     if(compareData(mData->tempRawBufPtr[oldTempCursor], mData->tempRawBufPtr[freshTempCursor])) {
+        mData->tempRawBufPtr[freshTempCursor] = oldTempData;
+        freshTempCursor = (freshTempCursor - 1) % 8;
+     }
+     addComputeTaskFlag++;  // just add one. repetition has been delt with.
    }
+
+   // Measure Blood Pressure
    if (selections & BP_SCHEDULED) {
      // Measure Systolic
      unsigned char oldSBPCursor  = freshSBPCursor;
      freshSBPCursor  = (freshSBPCursor  + 1) % 8;
+     unsigned int oldSysData = mData->bpRawBufPtr[freshSBPCursor];
      requestAndReceive((char*)&(mData->bpRawBufPtr[oldSBPCursor]), sizeof(unsigned int), 
      (char*)&(mData->bpRawBufPtr[freshSBPCursor]), sizeof(unsigned int), MEASURE_TASK, SYSTO_RAW_SUBTASK);
+     if(compareData(mData->bpRawBufPtr[oldSBPCursor], mData->bpRawBufPtr[freshSBPCursor])) {
+        mData->bpRawBufPtr[freshSBPCursor] = oldSysData;
+        freshSBPCursor = (freshSBPCursor - 1) % 8;
+     }
      // Measure Diastolic
      unsigned char oldDBPCursor  = freshDBPCursor;
      freshDBPCursor  = ((freshDBPCursor + 1) % 8) + 8;
+     unsigned int oldDiasData = mData->bpRawBufPtr[freshDBPCursor];
      requestAndReceive((char*)&(mData->bpRawBufPtr[oldDBPCursor]), sizeof(unsigned int), 
      (char*)&(mData->bpRawBufPtr[freshDBPCursor]), sizeof(unsigned int), MEASURE_TASK, DIASTO_RAW_SUBTASK);
+     if(compareData(mData->bpRawBufPtr[oldDBPCursor], mData->bpRawBufPtr[freshDBPCursor])) {
+        mData->bpRawBufPtr[freshDBPCursor] = oldDiasData;
+        freshDBPCursor = (freshDBPCursor - 1) % 8 + 8;
+     }
      // do the systo alarm increment
      if (*(mData->mCountPtr) > 0) {
         // alarm is expecting us to count how many times we are called.
         *(mData->mCountPtr) = *(mData->mCountPtr) + 1;
      }
-        addComputeTaskFlag++;  // just add one. repetition has been delt with.
-
+     addComputeTaskFlag++;  // just add one. repetition has been delt with.
    }
+
+   // Measure Pulse Rate
    if (selections & PULSE_SCHEDULED) {
      // Measure Pulse rate
      unsigned char oldPulseCursor  = freshPulseCursor;
      freshPulseCursor  = (freshPulseCursor + 1) % 8;
+     unsigned int oldPulseData = mData->prRawBufPtr[freshPulseCursor];
      requestAndReceive((char*)&(mData->prRawBufPtr[oldPulseCursor]), sizeof(unsigned int), 
      (char*)&(mData->prRawBufPtr[freshPulseCursor]),sizeof(unsigned int), MEASURE_TASK, PULSE_RAW_SUBTASK);
-             addComputeTaskFlag++;  // just add one. repetition has been delt with.
+     if(compareData(mData->prRawBufPtr[oldPulseCursor], mData->prRawBufPtr[freshPulseCursor])) {
+        mData->prRawBufPtr[freshPulseCursor] = oldPulseData;
+        freshPulseCursor = (freshPulseCursor - 1) % 8;
+     }
+     addComputeTaskFlag++;  // just add one. repetition has been delt with.
    }
+
+   // Measure Respiration Rate
    if (selections & RESP_SCHEDULED) {
      // Mesure Respiration rate
      unsigned char oldRespCursor  = freshRespCursor;
      freshRespCursor  = (freshRespCursor + 1) % 8;
+     unsigned int oldRespData = mData->rrRawBufPtr[freshRespCursor];
      requestAndReceive((char*)&(mData->rrRawBufPtr[oldRespCursor]), sizeof(unsigned int), 
      (char*)&(mData->rrRawBufPtr[freshRespCursor]),sizeof(unsigned int), MEASURE_TASK, RESP_RAW_SUBTASK);
-             addComputeTaskFlag++;  // just add one. repetition has been dealt with.
+     if(compareData(mData->rrRawBufPtr[oldRespCursor], mData->rrRawBufPtr[freshRespCursor])) {
+        mData->rrRawBufPtr[freshRespCursor] = oldRespData;
+        freshRespCursor = (freshRespCursor - 1) % 8;
+     }
+     addComputeTaskFlag++;  // just add one. repetition has been dealt with.
    }
+   
    // Wrap up. clear the selections. notify that the compute task needs to be scheduled
    *(mData->measurementSelectionPtr) = 0;
    Serial.print((mData->rrRawBufPtr[freshPulseCursor]));
@@ -1103,7 +1134,9 @@ void statusTask(void* data) {
    return;
 }
 
-
+bool compareData(unsigned int oldData, unsigned int newData) {
+  return (1.15 * oldData >= 1.0 * newData);
+}
 
 
 /******************************************
