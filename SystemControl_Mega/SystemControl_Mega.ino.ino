@@ -737,6 +737,11 @@ void measureTask(void* data) {
      if(compareData(mData->prRawBufPtr[oldPulseCursor], mData->prRawBufPtr[freshPulseCursor])) {
         mData->prRawBufPtr[freshPulseCursor] = oldPulseData;
         freshPulseCursor = (freshPulseCursor - 1) % 8;
+        Serial.print("Rolled Back\n");
+                Serial.print(mData->prRawBufPtr[oldPulseCursor]);
+        Serial.print("\n");
+                Serial.print(mData->prRawBufPtr[freshPulseCursor]);
+
      }
      if (mData->mCountPtr[1] > 0) {
         // alarm is expecting us to count how many times we are called.
@@ -851,7 +856,7 @@ void warningAlarmTask(void* data) {
   } else {
    diasWarnResult = TRUE;
   }
-  *(wData->bpOutOfRangePtr) = sysAlarmResult || diasAlarmResult;
+  *(wData->bpOutOfRangePtr) = sysAlarmResult | diasAlarmResult;
   if (sysWarnResult == FALSE && diasWarnResult == FALSE) {
     *(wData->bpHighPtr) = FALSE;
   } else {
@@ -893,7 +898,7 @@ void warningAlarmTask(void* data) {
     // out
     *(wData->systoColorPtr) = ORANGE;
     *(wData->diastoColorPtr) = ORANGE;
-    if (*(wData->bpOutOfRangePtr) == 2){
+    if (*(wData->bpOutOfRangePtr) >= 2){
       flasherIndicator = flasherIndicator | BP_SCHEDULED;
     }else{
       flasherIndicator = flasherIndicator & (~BP_SCHEDULED);
@@ -1272,14 +1277,14 @@ void displayTask(void* data) {
        if (flasherIndicator & BP_SCHEDULED) {
           // we need to flash
           static long bpSFtimer = 0;
-          if (bpSFtimer!=0 && (millis()-bpSFtimer)<500) {
-              tft.setTextColor(*(dData->systoColorPtr),BACKGROUND_COLOR);
+          if (bpSFtimer!=0 && (millis()-bpSFtimer)<800) {
+              tft.setTextColor(*(dData->diastoColorPtr),BACKGROUND_COLOR);
           }else{
               tft.setTextColor(BACKGROUND_COLOR,BACKGROUND_COLOR);
               bpSFtimer = millis();
           }
        }else{
-          tft.setTextColor(*(dData->systoColorPtr),BACKGROUND_COLOR);
+          tft.setTextColor(*(dData->diastoColorPtr),BACKGROUND_COLOR);
        }
        tft.print((char*)(dData->bpCorrectedBufPtr[freshSBPCursor]));
        tft.print(".00");
@@ -1293,10 +1298,10 @@ void displayTask(void* data) {
        tft.setTextColor(STATIC_TEXT_COLOR);
        tft.print("   Diastolic:");
        // Show the Dias Pressure
-        if (flasherIndicator & BP_SCHEDULED) {
+       if (flasherIndicator & BP_SCHEDULED) {
           // we need to flash
           static long bpDFtimer = 0;
-          if (bpDFtimer!=0 && (millis()-bpDFtimer)<500) {
+          if (bpDFtimer!=0 && (millis()-bpDFtimer)<800) {
               tft.setTextColor(*(dData->diastoColorPtr),BACKGROUND_COLOR);
           }else{
               tft.setTextColor(BACKGROUND_COLOR,BACKGROUND_COLOR);
@@ -1463,8 +1468,12 @@ void statusTask(void* data) {
    return;
 }
 
-bool compareData(unsigned int oldData, unsigned int newData) {
-  return (1.15 * oldData >= 1.0 * newData);
+char compareData(unsigned int oldData, unsigned int newData) {
+  char result = 0; 
+  if((1.15 * oldData >= newData*1.0)) { 
+    result = 1; 
+  }
+  return result;
 }
 
 

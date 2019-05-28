@@ -4,6 +4,7 @@
 #define DELAY_TIME 2
 #define BP_PIN_IN 3
 
+
 // function headers
 void setup();
 void taskDispatcher(byte task, byte subtask);
@@ -42,12 +43,15 @@ int tempFlag;
 int tempMultiplier;
 volatile byte PRcount;
 volatile byte RRcount;
-volatile byte BPcount;
-unsigned int BPFlag;
-unsigned long passedTime; 
+double BPcount;
+int BPFlag;
+unsigned int bloodPressureData;
+int switchIn = 7; 
+unsigned long startTime; 
 unsigned int diasMeasure;
 unsigned int sysMeasure;
-
+unsigned long BPTimeOut = 0;
+unsigned char BPFinished = 0;
 /******************************************
 * Function Name: setup
 * Function Inputs: None
@@ -73,16 +77,17 @@ void setup()
   pinMode(PR_PIN_IN, INPUT_PULLUP); 
   pinMode(RR_PIN_IN, INPUT_PULLUP);
   pinMode(BP_PIN_IN, INPUT_PULLUP);
+  pinMode(switchIn, INPUT); 
   BPFlag = 1;
-  BPcount = 80;
+  BPcount = 80.0;
   PRcount = 0; 
   RRcount = 0;
-  passedTime = 0; 
+  startTime = 0; 
   tempCount = 0;
   tempMultiplier = -1;
   tempFlag = 0;
   diasMeasure = 0;
-  sysMeasure = 1;
+  sysMeasure = 0;
 }
 
 /******************************************
@@ -141,10 +146,10 @@ void taskDispatcher(byte task,  byte subtask){
           returnIntDump = temperature(dataIntType);
           break;
         case 2:                                         // Case 2: systolicPressRaw    
-          returnIntDump = bloodPressure();
+          returnIntDump = bloodPressure(dataIntType);
           break;
         case 3:                                         // Case 3: diastolicCaseRaw
-          returnIntDump = bloodPressure();
+          returnIntDump = bloodPressure(dataIntType);
           break;  
         case 4:                                         // Case 4: pulseRateRaw
           returnIntDump = pulseRate();
@@ -263,7 +268,16 @@ unsigned int temperature(unsigned int data)
 
 void isrBP() 
 {
-  BPcount += (0.9 + 0.2 * BPFlag) * BPcount;
+  if (BPFlag == 1) { 
+    BPcount = 1.1 * BPcount; 
+  } else if (BPFlag == 0) { 
+    BPcount = 0.9 * BPcount;  
+  }
+  unsigned long currTime = millis();
+  if (currTime - BPTimeOut >= 7000){
+    BPFinished = 1;
+  }
+  //BPcount += (0.9 + 0.2 * BPFlag) * BPcount;
 }
 
 /******************************************
@@ -276,29 +290,28 @@ void isrBP()
 *           call count.
 * Author: Matt, Michael, Eun Tae
 ******************************************/
-unsigned int bloodPressure() {
-  attachInterrupt(digitalPinToInterrupt(PR_PIN_IN), isrBP, FALLING);
-  passedTime = millis();
-  // Timeout occurs after 30 seconds of measurement
-  // Interrupt will block out Uno process for that duration
-  // If the measurement is done before Timeout, it will exit the 
-  // loop and return the value
-  while(millis() - passedTime <= 30000) {
-    unsigned int bloodPressureData = floor(BPcount);
-    if(BPcount <= 150 && BPcount >= 110 && !sysMeasure) {
+unsigned int bloodPressure(unsigned int data) {
+  BPTimeOut = millis();
+  attachInterrupt(digitalPinToInterrupt(BP_PIN_IN), isrBP, FALLING);
+  BPFlag = digitalRead(switchIn); 
+  BPFinished = 0;
+  while(BPFinished == 0){
+  if(BPcount <= 150 && BPcount >= 110 && !sysMeasure) {
+      detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
       sysMeasure = 1;
       diasMeasure = 0;
+      data = (unsigned int)BPcount;
+      BPFinished = 1;
+  } else if (BPcount <= 80 && BPcount >= 50 && !diasMeasure){
       detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
-      break;
-    } else if (BPcount <= 80 && BPcount >= 50 && !diasMeasure){
       sysMeasure = 0;
-      diasMeasure = 1;
+      //diasMeasure = 1;
+      data = (unsigned int) BPcount;
       BPcount = 80;
-      detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
-      break;
+      BPFinished = 1;
     }
   }
-  return bloodPressureData;
+  return data;
 }
 
 /*******************************
@@ -441,6 +454,9 @@ char tempRange(unsigned int data) {
   if (dataCorrected >= 36.1 && dataCorrected <= 37.8) { 
     result = 0; 
   }
+  if (dataCorrected < 34.295 || dataCorrected > 39.69){
+    result = 2;
+  }
   return result; 
 } 
 
@@ -458,6 +474,9 @@ char sysRange(unsigned int data) {
   if (dataCorrected >= 120 && dataCorrected <=130) { 
     result = 0; 
   } 
+  if (dataCorrected <  114 || dataCorrected > 136.5){
+    result = 2;
+  }
   return result; 
 } 
 
@@ -475,6 +494,9 @@ char diasRange(unsigned int data) {
   if (dataCorrected >= 70 && dataCorrected <=80) { 
     result = 0; 
   } 
+  if (dataCorrected < 66.5 || dataCorrected > 84){
+    result = 2;
+  }
   return result; 
 } 
 
@@ -492,6 +514,9 @@ char prRange(unsigned int data) {
   if (dataCorrected >= 60 && dataCorrected <= 100) { 
     result = 0; 
   }
+  if (dataCorrected < 57 || dataCorrected > 105){
+    result = 2;
+  }
   return result; 
 } 
 
@@ -508,6 +533,9 @@ char rrRange(unsigned int data) {
   unsigned int dataCorrected = 7 + (3 * data);
   if (dataCorrected >= 12 && dataCorrected <= 25) { 
     result = 0; 
+  }
+  if (dataCorrected < 11.4 || dataCorrected > 26.25){
+    result = 2;
   }
   return result; 
 } 
