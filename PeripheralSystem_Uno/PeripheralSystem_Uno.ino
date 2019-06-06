@@ -3,12 +3,16 @@
 #define RR_PIN_IN 2
 #define DELAY_TIME 2
 #define BP_PIN_IN 3
+#define TEMP_INPUT A5
+#define EKG_INPUT A4
 
+#include "optfft.h"
 
 // function headers
 void setup();
 void taskDispatcher(byte task, byte subtask);
 void writeBack(char* data, char count);
+
 // For measurement
 unsigned int temperature(unsigned int data);
 unsigned int systolicPress(unsigned int data);
@@ -16,18 +20,21 @@ unsigned int diastolicPress(unsigned int data);
 unsigned int pulseRate(unsigned int data);
 unsigned int respRate(unsigned int data);
 unsigned short statusCheck(unsigned short data);
+
 // For compute
 double tempCorrected(unsigned int data);
 unsigned int sysCorrected(unsigned int data);
 double diasCorrected(unsigned int data);
 unsigned int prCorrected(unsigned int data);
 unsigned int rrCorrected(unsigned int data);
+
 // For alarm
 char tempRange(unsigned int data);
 char sysRange(unsigned int data);
 char diasRange(unsigned int data);
 char prRange(unsigned int data);
 char rrRange(unsigned int data);
+
 // For warning
 char tempHigh(unsigned int data);
 char sysHigh(unsigned int data);
@@ -52,6 +59,11 @@ unsigned int diasMeasure;
 unsigned int sysMeasure;
 unsigned long BPTimeOut = 0;
 unsigned char BPFinished = 0;
+unsigned int EKGRawBuffer[256];
+unsigned int EKGCount = 0;
+signed int real[256];
+signed int imag[256];
+
 /******************************************
 * Function Name: setup
 * Function Inputs: None
@@ -113,7 +125,6 @@ void loop()
   taskDispatcher(task, subtask);
 }
 
- 
 /******************************************
 * Function Name: taskDispatcher
 * Function Inputs: bytes respresenting task and subtask
@@ -155,7 +166,10 @@ void taskDispatcher(byte task,  byte subtask){
           returnIntDump = pulseRate();
           break; 
         case 5:                                         // Case 5: respirationRateRaw
-          returnIntDump = pulseRate();
+          returnIntDump = respRate();
+          break;
+        case 6:                                         // Case 6: EKGRaw
+          returnIntDump = ekgRecord(dataIntType);
           break;
       }
       writeBack((char*)&returnIntDump, sizeof(unsigned int));
@@ -183,6 +197,10 @@ void taskDispatcher(byte task,  byte subtask){
           returnIntDump = rrCorrected(dataIntType);
           writeBack((char*)&returnIntDump, sizeof(unsigned int));
           break; 
+        case 6:                                         // Case 6: EKGFreqBuf
+          returnIntDump = ekgCorrected();
+          writeBack((char*)&returnIntDump, sizeof(unsigned int));
+          break;
       }
       break;
     case 3:                                             // Case 3: Alarm if out of range
@@ -248,22 +266,8 @@ void taskDispatcher(byte task,  byte subtask){
 ******************************************/
 unsigned int temperature(unsigned int data)
 {
-  // start with going up. Hit 50->reverse Hit15->reverse
-  if ((data>50 || data<15) && tempFlag == 1){ // reverse
-    tempMultiplier = -tempMultiplier;
-    tempFlag = 0;
-  }
-  if ( data < 50 && data > 15){
-    tempFlag = 1;
-  }
-  if (tempCount % 2 == 0){
-    data += 2*tempMultiplier;
-  }else{
-    data -= 1*tempMultiplier;
-  }
-  tempCount++;
-  tempCount=tempCount % BASE_TEN_BASE;  // prevent overflow, but not very necessary
-  return data; 
+  data = map(analogRead(TEMP_INPUT), 0, 1023, 40, 50);
+  return data;
 }
 
 void isrBP() 
@@ -277,7 +281,6 @@ void isrBP()
   if (currTime - BPTimeOut >= 7000){
     BPFinished = 1;
   }
-  //BPcount += (0.9 + 0.2 * BPFlag) * BPcount;
 }
 
 /******************************************
@@ -370,6 +373,17 @@ unsigned int respRate() {
   return respRateData;
 }
 
+unsigned int ekgRecord(unsigned int data) {
+  data = analogRead(EKG_INPUT);
+  if (data == 1023) {
+    EKGRawBuffer[EKGCount % 256] = millis();
+    EKGCount++;
+    return millis();
+  } else {
+    return ekgRecord(data);
+  }
+}
+
 /******************************************
 * Function Name: tempCorrected
 * Function Inputs: Integer of raw data
@@ -437,6 +451,19 @@ unsigned int prCorrected(unsigned int data) {
 ******************************************/
 unsigned int rrCorrected(unsigned int data) {
   unsigned int dataCorrected = 7 + (3 * data);
+  return dataCorrected;
+}
+
+unsigned int ekgCorrected() {
+  for (int k = 0; k < 256; k++) {
+    for (int n = 0; n < 256; n++) {
+      float theta = ((n*k*2.0)*(M_PI)/(float)(256));
+      int r = EKGRawBuffer[n];
+      real[k] += r*cos(theta);
+      imag[k] -= r*sin(theta);
+    }
+  }
+  unsigned int dataCorrected = optfft((int*)real, (int*)imag);
   return dataCorrected;
 }
 
@@ -529,6 +556,26 @@ char prRange(unsigned int data) {
 * Author: Matt, Michael, Eun Tae
 ******************************************/
 char rrRange(unsigned int data) { 
+  char result = 1; 
+  unsigned int dataCorrected = 7 + (3 * data);
+  if (dataCorrected >= 12 && dataCorrected <= 25) { 
+    result = 0; 
+  }
+  if (dataCorrected < 11.4 || dataCorrected > 26.25){
+    result = 2;
+  }
+  return result; 
+} 
+
+/******************************************
+* Function Name: rrRange
+* Function Inputs: Integer of raw data
+* Function Outputs: Character, which behaves like boolean
+* Function Description: Checks whether given input breath per minute data
+*           is within the range of normal
+* Author: Matt, Michael, Eun Tae
+******************************************/
+char ekgRange(unsigned int data) { 
   char result = 1; 
   unsigned int dataCorrected = 7 + (3 * data);
   if (dataCorrected >= 12 && dataCorrected <= 25) { 
