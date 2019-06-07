@@ -99,6 +99,17 @@ typedef struct
   unsigned int* prRawBufPtr;
   unsigned int* rrRawBufPtr;  
   unsigned char** ekgFreqBufPtr;
+   Bool* tempHighPtr;
+  unsigned char* bpOutOfRangePtr;
+  Bool* bpHighPtr;
+  unsigned char* pulseOutOfRangePtr;
+  Bool* pulseLowPtr;
+  unsigned char* respOutOfRangePtr;
+  Bool* rrLowPtr;
+  Bool* rrHighPtr;
+  unsigned char* ekgOutOfRangePtr;
+  Bool* ekgLowPtr;
+  Bool* ekgHighPtr;
 } RemComData; 
 
 typedef struct
@@ -133,6 +144,7 @@ typedef struct
   unsigned char* respOutOfRangePtr;
   Bool* rrLowPtr;
   Bool* rrHighPtr;
+  unsigned char* ekgOutOfRangePtr;
   Bool* ekgLowPtr;
   Bool* ekgHighPtr;
   unsigned char* ackReceived;
@@ -1123,6 +1135,7 @@ void warningAlarmTask(void* data) {
 }
 
 
+
 /******************************************
 * function name: remoteComTask
 * function inputs: a pointer to the remoteComData
@@ -1140,99 +1153,6 @@ void warningAlarmTask(void* data) {
 * author: Matt
 ******************************************/
 void remoteComTask(void* data){
-  RemComData* remData = (RemComData*)data;
-  if (remoteScheduled!=0){
-    // send the last data we got and thats it.
-   if (remoteScheduled & TEMP_SCHEDULED) {
-        toTerminal((remData->tempRawBufPtr[freshTempCursor]),'T', '=');
-   }
-   if (remoteScheduled & BP_SCHEDULED) {
-         // Render BP
-         toTerminal((remData->bpRawBufPtr[freshSBPCursor]),'S', '=');
-         toTerminal((remData->bpRawBufPtr[freshDBPCursor]),'D', '=');
-   }
-   if (remoteScheduled & PULSE_SCHEDULED) {
-          //render temp
-         toTerminal((remData->prRawBufPtr[freshPulseCursor]),'P', '=');
-   }
-   if (remoteScheduled & RESP_SCHEDULED) {
-         toTerminal((remData->rrRawBufPtr[freshRespCursor]),'R', '=');
-   }
-   remoteScheduled = 0;
-   return;
-  }
-  // checks the readin stuffs from the Serial0(Serial)
-  if (Serial.available()<1) {
-    // nothing to be read, get out
-    return;
-  }
-  // there is something coming in
-  char header = Serial.read();
-  if (header != 'X'){
-    // it is not a good request. take the char and get out
-    return;
-  }
-  if (Serial.available()<1){
-    // request is missing
-    Serial.write('E');
-    Serial.write('R');
-    Serial.write('R');
-    Serial.write(':');
-    Serial.write('4');
-    Serial.write('\n');
-    return;
-  }
-  char reqChar = Serial.read();
-  if (Serial.available()<1) {
-     // footer missing
-    Serial.write('E');
-    Serial.write('R');
-    Serial.write('R');
-    Serial.write(':');
-    Serial.write('5');
-    Serial.write('\n');
-     return;
-  }
-  // there is something coming in
-  char footer = Serial.read();
-  if (footer != 'U'){
-    // Unknown Footer
-    Serial.write('E');
-    Serial.write('R');
-    Serial.write('R');
-    Serial.write(':');
-    Serial.write('3');
-    Serial.write('\n');
-    return;
-  }
-  // it is a request, deal with it 
-  switch(reqChar){ 
-      case 'T':                                         // Case 1: temperatureRaw
-        measurementSelection = measurementSelection | TEMP_SCHEDULED;
-        break;
-      case 'B':                                         // Case 2: bloodPressRaw    
-        measurementSelection = measurementSelection | BP_SCHEDULED;
-        break;    
-      case 'P':                                         // Case 3: pulseRateRaw
-        measurementSelection = measurementSelection | PULSE_SCHEDULED;
-        break;  
-      case 'R':                                         // Case 4: respRateRaw
-        measurementSelection = measurementSelection | RESP_SCHEDULED;
-        break; 
-      case 'E':                                         // Case 5: ekgRaw
-        measurementSelection = measurementSelection | EKG_SCHEDULED;
-        break;
-      default:                                         // Case 6: Default Error
-        Serial.write('E');
-        Serial.write('R');
-        Serial.write('R');
-        Serial.write(':');
-        Serial.write('2');
-        Serial.write('\n');
-        return;
- }
- // For PuTTY implementation
- /*
   // checks the readin stuffs from the Serial0(Serial)
   if (Serial.available() < 1) {
     // nothing to be read, get out
@@ -1240,21 +1160,9 @@ void remoteComTask(void* data){
   }
   // there is something coming in
   char input = Serial.read();
-  
-  if (Serial.available() < 1){
-    // request is missing
-    Serial.write('E');
-    Serial.write('R');
-    Serial.write('R');
-    Serial.write(':');
-    Serial.write('4');
-    Serial.write('\n');
-    return;
-  }
-
   if (input == 'I') {
     remoteOn = 1;
-    Serial.write("Input was I \n");
+    Serial.write("Connection Established!\----------\nWhat is thy bidding, my master?\n\n");
   }
   // it is a request, deal with it 
   if (remoteOn == 1 && input != 'I') { 
@@ -1266,37 +1174,40 @@ void remoteComTask(void* data){
           measurementSelection = measurementSelection | PULSE_SCHEDULED;
           measurementSelection = measurementSelection | RESP_SCHEDULED;
           measurementSelection = measurementSelection | EKG_SCHEDULED;
-          Serial.write("Input was S \n");
+          Serial.write("S: Roger. We may fire when ready \n");
           break;    
         case 'P':                                         // Case P: STOP
           commanderMode = STOP;
-          Serial.write("Input was P \n");
+          Serial.write("P: Roger. Executing order 66\n");
           break;  
         case 'D':                                         // Case D: DISPLAY    
-          Serial.write("Input was D \n");
-          if (displayOn)
+          if (displayOn){
             displayOn = 0;
-          else
+            Serial.write("D: Roger. Now they are blinded by the dark side of the force\n");
+          } else {
             displayOn = 1;
+            Serial.write("D: Roger, Now they will see through the lies of the Jedi.\n");
+          }
           break; 
         case 'M':                                         // Case M: RETURN MEASUREED VALUES
+          Serial.write("M: Ele the phantom. Ele the fen.\n-------------------");
           toTerminal((remData->tempRawBufPtr[freshTempCursor]),'T', '=');
           toTerminal((remData->bpRawBufPtr[freshSBPCursor]),'S', '=');
           toTerminal((remData->bpRawBufPtr[freshDBPCursor]),'D', '=');
           toTerminal((remData->prRawBufPtr[freshPulseCursor]),'P', '=');
           toTerminal((remData->rrRawBufPtr[freshRespCursor]),'R', '=');
-          toTerminal((remData->ekgFreqBufPtr[0]),'E', '=');
-          Serial.write("Input was M \n");
+          toTerminal((remData->ekgFreqBufPtr[freshEKGCursor]),'E', '='); 
+          Serial.write("-------------------------\n");
           break;
         case 'W':                                         // Case W: RETURN WARNINGS
           Serial.write("Input was W \n");
           break;
         default:                                          // Case 6: Default
-          Serial.write("E \n");
+          Serial.write("E: You don't know the Command. You must be a Rebel Scum!!\n");
           return;
     }  
   }
-  }*/
+  }
 }
 
 /******************************************
