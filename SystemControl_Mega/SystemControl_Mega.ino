@@ -31,7 +31,7 @@
 #define BP_SCHEDULED 2
 #define PULSE_SCHEDULED 4
 #define RESP_SCHEDULED 8
-#define EKG_SCHEDULED 16
+#define ekg_SCHEDULED 16
 #define LCD_CS A3 // Chip Select goes to Analog 3
 #define LCD_CD A2 // Command/Data goes to Analog 2
 #define LCD_WR A1 // LCD Write goes to Analog 1
@@ -86,7 +86,7 @@ typedef struct
   unsigned int* bpRawBufPtr;
   unsigned int* prRawBufPtr;
   unsigned int* rrRawBufPtr;
-  unsigned int* EKGRawBufPtr;
+  unsigned int* ekgRawBufPtr;
   unsigned int* measurementSelectionPtr;
   unsigned char* mCountPtr; 
 } MeasureData; 
@@ -97,7 +97,7 @@ typedef struct
   unsigned int* bpRawBufPtr;
   unsigned int* prRawBufPtr;
   unsigned int* rrRawBufPtr;  
-  unsigned char** EKGFreqBufPtr;
+  unsigned char** ekgFreqBufPtr;
 } RemComData; 
 
 typedef struct
@@ -106,12 +106,12 @@ typedef struct
   unsigned int* bpRawBufPtr;
   unsigned int* prRawBufPtr;
   unsigned int* rrRawBufPtr;
-  unsigned int* EKGRawBufPtr;
+  unsigned int* ekgRawBufPtr;
   unsigned char** tempCorrectedBufPtr;
   unsigned char** bpCorrectedBufPtr;
   unsigned char** prCorrectedBufPtr;
   unsigned char** rrCorrectedBufPtr;  
-  unsigned char** EKGFreqBufPtr;
+  unsigned char** ekgFreqBufPtr;
 } ComputeData; 
 
 
@@ -121,7 +121,7 @@ typedef struct
   unsigned int* bpRawBufPtr;
   unsigned int* prRawBufPtr;
   unsigned int* rrRawBufPtr;
-  unsigned int* EKGRawBufPtr;
+  unsigned int* ekgRawBufPtr;
   unsigned short* batteryState;
   unsigned char* tempOutOfRangePtr;
   Bool* tempHighPtr;
@@ -132,8 +132,8 @@ typedef struct
   unsigned char* respOutOfRangePtr;
   Bool* rrLowPtr;
   Bool* rrHighPtr;
-  Bool* EKGLowPtr;
-  Bool* EKGHighPtr;
+  Bool* ekgLowPtr;
+  Bool* ekgHighPtr;
   unsigned char* ackReceived;
   unsigned int* tempColorPtr;
   unsigned int* systoColorPtr;
@@ -151,14 +151,14 @@ typedef struct
   unsigned char** bpCorrectedBufPtr;
   unsigned char** prCorrectedBufPtr;  
   unsigned char** rrCorrectedBufPtr;  
-  unsigned char** EKGFreqBufPtr;
+  unsigned char** ekgFreqBufPtr;
   unsigned short* batteryState;
   unsigned int* tempColorPtr;
   unsigned int* systoColorPtr;
   unsigned int* diastoColorPtr;
   unsigned int* pulseColorPtr;
   unsigned int* respColorPtr;
-  unsigned int* EKGColorPtr;
+  unsigned int* ekgColorPtr;
   unsigned char* modeSelection;
   unsigned int* measurementSelectionPtr;  
   unsigned char* ackReceived;
@@ -222,7 +222,7 @@ unsigned int temperatureRawBuf[8] = {75,0,0,0,0,0,0,0};
 unsigned int bloodPressureRawBuf[16] = {80,0,0,0,0,0,0,0,80,0,0,0,0,0,0,0};
 unsigned int pulseRateRawBuf[8] = {0,0,0,0,0,0,0,0};
 unsigned int respirationRateRawBuf[8] = {0,0,0,0,0,0,0,0};
-unsigned int EKGRawBuf[256];
+unsigned int ekgRawBuf[256];
 unsigned int measurementSelection = 0; // this is using a bit mask capability. See MeasureTask function for detail 
 unsigned int remoteScheduled = 0;
 // Initial Values for Compute
@@ -236,13 +236,13 @@ unsigned char* tempCorrectedBuf[8];
 unsigned char* bloodPressureCorrectedBuf[16];
 unsigned char* pulseRateCorrectedBuf[8];
 unsigned char* respirationRateCorrectedBuf[8];
-unsigned char* EKGFreqBuf[16];
+unsigned char* ekgFreqBuf[16];
 unsigned int tempColor = GREEN;
 unsigned int systoColor = GREEN;
 unsigned int diastoColor = GREEN;
 unsigned int pulseColor = GREEN;
 unsigned int respColor = GREEN;
-unsigned int EKGColor = GREEN;
+unsigned int ekgColor = GREEN;
 Elegoo_GFX_Button button[4];
 Elegoo_GFX_Button menuButton[4];
 Elegoo_GFX_Button ackButton;
@@ -252,6 +252,7 @@ unsigned char freshSBPCursor = 0;
 unsigned char freshDBPCursor = 8;
 unsigned char freshPulseCursor = 0;
 unsigned char freshRespCursor = 0;
+unsigned char freshEKGCursor = 0;
 // Global Variables for Status
 unsigned short batteryState = FULL_BATTERY;
 // Global Variables for Alarm
@@ -266,8 +267,8 @@ Bool tempHigh = FALSE;
 Bool pulseLow = FALSE;
 Bool rrLow = FALSE;
 Bool rrHigh = FALSE;
-Bool EKGLow = FALSE;
-Bool EKGHigh = FALSE;
+Bool ekgLow = FALSE;
+Bool ekgHigh = FALSE;
 //Global variables for all possible tasks
 TCB* measureTCB = NULL;
 TCB* computeTCB = NULL;
@@ -380,7 +381,7 @@ void startUpTask() {
    measureData.bpRawBufPtr = &bloodPressureRawBuf[0];;
    measureData.prRawBufPtr = &pulseRateRawBuf[0];
    measureData.rrRawBufPtr = &respirationRateRawBuf[0];
-   measureData.EKGRawBufPtr = &EKGRawBuf[0];
+   measureData.ekgRawBufPtr = &ekgRawBuf[0];
    measureData.measurementSelectionPtr = &measurementSelection;
    measureData.mCountPtr = mCount;
    freshTempCursor = 0;
@@ -409,12 +410,12 @@ void startUpTask() {
    computeData.bpRawBufPtr = &bloodPressureRawBuf[0];
    computeData.prRawBufPtr = &pulseRateRawBuf[0];
    computeData.rrRawBufPtr = &respirationRateRawBuf[0];
-   computeData.EKGRawBufPtr = &EKGRawBuf[0];
+   computeData.ekgRawBufPtr = &ekgRawBuf[0];
    computeData.tempCorrectedBufPtr = tempCorrectedBuf;
    computeData.bpCorrectedBufPtr = bloodPressureCorrectedBuf;
    computeData.prCorrectedBufPtr = pulseRateCorrectedBuf;
    computeData.rrCorrectedBufPtr = respirationRateCorrectedBuf;
-   computeData.EKGFreqBufPtr = EKGFreqBuf;
+   computeData.ekgFreqBufPtr = ekgFreqBuf;
    for (int i = 0; i < 8; i++) {
      tempCorrectedBuf[i] = (unsigned char*)malloc(MAX_STR_BUF_LEN);
    }
@@ -428,7 +429,7 @@ void startUpTask() {
      respirationRateCorrectedBuf[i] = (unsigned char*)malloc(MAX_STR_BUF_LEN);
    }
    for (int i = 0; i < 16; i++) {
-     EKGFreqBuf[i] = (unsigned char*)malloc(MAX_STR_BUF_LEN);
+     ekgFreqBuf[i] = (unsigned char*)malloc(MAX_STR_BUF_LEN);
    }
    strcpy((char*)tempCorrectedBuf[0], initialTempDisplay);
    strcpy((char*)bloodPressureCorrectedBuf[0], initialSystoDisplay);
@@ -459,8 +460,8 @@ void startUpTask() {
    warningAlarmData.respOutOfRangePtr = &respOutOfRange;
    warningAlarmData.rrLowPtr = &rrLow;
    warningAlarmData.rrHighPtr = &rrHigh;
-   warningAlarmData.EKGLowPtr = &EKGLow;
-   warningAlarmData.EKGHighPtr = &EKGHigh;
+   warningAlarmData.ekgLowPtr = &ekgLow;
+   warningAlarmData.ekgHighPtr = &ekgHigh;
    warningAlarmData.batteryState = &batteryState;
    warningAlarmData.ackReceived = ackReceived;
    warningAlarmData.tempColorPtr = &tempColor;
@@ -485,14 +486,14 @@ void startUpTask() {
    displayData.bpCorrectedBufPtr = bloodPressureCorrectedBuf;
    displayData.prCorrectedBufPtr = pulseRateCorrectedBuf;
    displayData.rrCorrectedBufPtr = respirationRateCorrectedBuf;
-   displayData.EKGFreqBufPtr = EKGFreqBuf;
+   displayData.ekgFreqBufPtr = ekgFreqBuf;
    displayData.batteryState = &batteryState;
    displayData.tempColorPtr = &tempColor;
    displayData.systoColorPtr = &systoColor;
    displayData.diastoColorPtr = &diastoColor;
    displayData.pulseColorPtr = &pulseColor;
    displayData.respColorPtr = &respColor;
-   displayData.EKGColorPtr = &EKGColor;
+   displayData.ekgColorPtr = &ekgColor;
    displayData.modeSelection = &modeSelection;
    displayData.measurementSelectionPtr = &measurementSelection;  
    displayData.ackReceived = ackReceived;
@@ -552,7 +553,7 @@ void startUpTask() {
    remData.bpRawBufPtr = &bloodPressureRawBuf[0];;
    remData.prRawBufPtr = &pulseRateRawBuf[0];
    remData.rrRawBufPtr = &respirationRateRawBuf[0];
-   remData.EKGFreqBufPtr = EKGFreqBuf;
+   remData.ekgFreqBufPtr = ekgFreqBuf;
    // TCB:
    TCB remoteComTCB;
    remoteComTCB.myTask = remoteComTask;
@@ -710,18 +711,7 @@ void measureTask(void* data) {
    // TIMING MECH
    if (commanderMode == STOP){
     return;
-   }
-
-   // What to do when S is true
-   /*if (S is true) {
-      *(mData->measurementSelectionPtr) = *(mData->measurementSelectionPtr) | TEMP_SCHEDULED;
-      *(mData->measurementSelectionPtr) = *(mData->measurementSelectionPtr) | BP_SCHEDULED;
-      *(mData->measurementSelectionPtr) = *(mData->measurementSelectionPtr) | PULSE_SCHEDULED;
-      *(mData->measurementSelectionPtr) = *(mData->measurementSelectionPtr) | RESP_SCHEDULED;
-   }*/
-
-   
-    
+   }    
    static unsigned long timer = 0;
    if (timer!=0 && (timeElapsed-timer)<SUSPENSION) {
      return;
@@ -785,6 +775,7 @@ void measureTask(void* data) {
      if(compareData(mData->prRawBufPtr[oldPulseCursor], mData->prRawBufPtr[freshPulseCursor])) {
         mData->prRawBufPtr[freshPulseCursor] = oldPulseData;
         freshPulseCursor = (freshPulseCursor - 1) % 8;
+        Serial.print("Rolled Back\n");
      }
      if (mData->mCountPtr[1] > 0) {
         // alarm is expecting us to count how many times we are called.
@@ -805,6 +796,7 @@ void measureTask(void* data) {
      if(compareData(mData->rrRawBufPtr[oldRespCursor], mData->rrRawBufPtr[freshRespCursor])) {
         mData->rrRawBufPtr[freshRespCursor] = oldRespData;
         freshRespCursor = (freshRespCursor - 1) % 8;
+        Serial.print("Rolled Back\n");
      }
      if (mData->mCountPtr[3] > 0) {
         // alarm is expecting us to count how many times we are called.
@@ -814,15 +806,16 @@ void measureTask(void* data) {
      remoteScheduled = remoteScheduled | RESP_SCHEDULED;
    }
 
-   // Measure EKG
-   if (selections & EKG_SCHEDULED) {
+   // Measure ekg
+   if (selections & ekg_SCHEDULED) {
       unsigned long timeStamp = millis();
       for (int i = 0; i < 256; i++) {
-        requestAndReceive((char*)&(mData->EKGRawBufPtr[i]), sizeof(unsigned int), 
-        (char*)&(mData->EKGRawBufPtr[i]), sizeof(unsigned int), MEASURE_TASK, EKG_RAW_SUBTASK);
+        requestAndReceive((char*)&(mData->ekgRawBufPtr[i]), sizeof(unsigned int), 
+        (char*)&(mData->ekgRawBufPtr[i]), sizeof(unsigned int), MEASURE_TASK, EKG_RAW_SUBTASK);
+        Serial.println(ekgRawBuf[i]);
       }
       addComputeTaskFlag++;
-      remoteScheduled = remoteScheduled | EKG_SCHEDULED;
+      remoteScheduled = remoteScheduled | ekg_SCHEDULED;
    }
    
    // Wrap up. clear the selections. notify that the compute task needs to be scheduled
@@ -836,7 +829,7 @@ void measureTask(void* data) {
 void computeTask(void* data) {
    // TIMING MECH
    static unsigned long timer = 0;
-   if (timer!=0 && (timeElapsed-timer)<SUSPENSION) {
+   if (timer != 0 && (timeElapsed-timer) < SUSPENSION) {
      return;
    }
    // It is our turn. do the compute. Then tell the scheduler to remove us
@@ -870,9 +863,11 @@ void computeTask(void* data) {
    requestAndReceive((char*)&(cData->rrRawBufPtr[freshRespCursor]),sizeof(unsigned int),
    (char*)&rrCorrDump, sizeof(unsigned int), COMPUTE_TASK, RESP_RAW_SUBTASK);
    sprintf((char*)(cData->rrCorrectedBufPtr[freshRespCursor]), "%d", rrCorrDump);
-
-   
-   
+   unsigned int ekgCorrDump;
+   requestAndReceive((char*)&(cData->ekgRawBufPtr[freshEKGCursor]),sizeof(unsigned int),
+   (char*)&ekgCorrDump, sizeof(unsigned int), COMPUTE_TASK, EKG_RAW_SUBTASK);
+   sprintf((char*)(cData->ekgFreqBufPtr[freshEKGCursor]), "%d", ekgCorrDump);
+   freshEKGCursor++;
    // done. now suicide
    addComputeTaskFlag = 0;
    //Serial.print("nComputeTask Completes\n");
@@ -1170,7 +1165,7 @@ void remoteComTask(void* data){
    remoteScheduled = 0;
    return;
   }
-  /*// checks the readin stuffs from the Serial0(Serial)
+  // checks the readin stuffs from the Serial0(Serial)
   if (Serial.available()<1) {
     // nothing to be read, get out
     return;
@@ -1235,8 +1230,8 @@ void remoteComTask(void* data){
       case 'R':                                         // Case 4: respRateRaw
         measurementSelection = measurementSelection | RESP_SCHEDULED;
         break; 
-      case 'E':                                         // Case 5: EKGRaw
-        measurementSelection = measurementSelection | EKG_SCHEDULED;
+      case 'E':                                         // Case 5: ekgRaw
+        measurementSelection = measurementSelection | ekg_SCHEDULED;
         break;
       default:                                         // Case 6: Default Error
         Serial.write('E');
@@ -1246,7 +1241,8 @@ void remoteComTask(void* data){
         Serial.write('2');
         Serial.write('\n');
         return;
- }*/  
+ }
+ /*
   // checks the readin stuffs from the Serial0(Serial)
   if (Serial.available() < 1) {
     // nothing to be read, get out
@@ -1279,7 +1275,7 @@ void remoteComTask(void* data){
           measurementSelection = measurementSelection | BP_SCHEDULED;
           measurementSelection = measurementSelection | PULSE_SCHEDULED;
           measurementSelection = measurementSelection | RESP_SCHEDULED;
-          measurementSelection = measurementSelection | EKG_SCHEDULED;
+          measurementSelection = measurementSelection | ekg_SCHEDULED;
           Serial.write("Input was S \n");
           break;    
         case 'P':                                         // Case P: STOP
@@ -1299,7 +1295,7 @@ void remoteComTask(void* data){
           toTerminal((remData->bpRawBufPtr[freshDBPCursor]),'D', '=');
           toTerminal((remData->prRawBufPtr[freshPulseCursor]),'P', '=');
           toTerminal((remData->rrRawBufPtr[freshRespCursor]),'R', '=');
-          toTerminal((remData->EKGFreqBufPtr[0]),'E', '=');
+          toTerminal((remData->ekgFreqBufPtr[0]),'E', '=');
           Serial.write("Input was M \n");
           break;
         case 'W':                                         // Case W: RETURN WARNINGS
@@ -1310,6 +1306,7 @@ void remoteComTask(void* data){
           return;
     }  
   }
+  }*/
 }
 
 /******************************************

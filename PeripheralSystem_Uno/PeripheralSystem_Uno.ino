@@ -1,3 +1,5 @@
+#include "optfft.h"
+
 #define BASE_TEN_BASE 10
 #define PR_PIN_IN 2
 #define RR_PIN_IN 2
@@ -5,8 +7,9 @@
 #define BP_PIN_IN 3
 #define TEMP_INPUT A5
 #define EKG_INPUT A4
-
-#include "optfft.h"
+#define SAMPLING_FREQUENCY 1000
+#define SAMPLES 256
+#define switchIn 7
 
 // function headers
 void setup();
@@ -27,6 +30,7 @@ unsigned int sysCorrected(unsigned int data);
 double diasCorrected(unsigned int data);
 unsigned int prCorrected(unsigned int data);
 unsigned int rrCorrected(unsigned int data);
+signed int optfft(signed int x[256], signed int y[256]); 
 
 // For alarm
 char tempRange(unsigned int data);
@@ -51,15 +55,14 @@ int tempMultiplier;
 volatile byte PRcount;
 volatile byte RRcount;
 double BPcount;
-int BPFlag;
+unsigned int BPFlag;
 unsigned int bloodPressureData;
-int switchIn = 7; 
-unsigned long startTime; 
+
+//unsigned long startTime; 
 unsigned int diasMeasure;
 unsigned int sysMeasure;
-unsigned long BPTimeOut = 0;
+unsigned int BPTimeOut = 0;
 unsigned char BPFinished = 0;
-unsigned int EKGRawBuffer[256];
 unsigned int EKGCount = 0;
 signed int real[256];
 signed int imag[256];
@@ -94,7 +97,7 @@ void setup()
   BPcount = 80.0;
   PRcount = 0; 
   RRcount = 0;
-  startTime = 0; 
+  //startTime = 0; 
   tempCount = 0;
   tempMultiplier = -1;
   tempFlag = 0;
@@ -144,6 +147,7 @@ void taskDispatcher(byte task,  byte subtask){
   // Alarm   = 3
   // Status  = 4
   unsigned int dataIntType;
+  double dataDoubleType;
   unsigned short dataShortType;
   unsigned int returnIntDump;
   double returnDoubleDump;
@@ -198,7 +202,7 @@ void taskDispatcher(byte task,  byte subtask){
           writeBack((char*)&returnIntDump, sizeof(unsigned int));
           break; 
         case 6:                                         // Case 6: EKGFreqBuf
-          returnIntDump = ekgCorrected();
+          returnIntDump = ekgCorrected(dataIntType);
           writeBack((char*)&returnIntDump, sizeof(unsigned int));
           break;
       }
@@ -375,13 +379,9 @@ unsigned int respRate() {
 
 unsigned int ekgRecord(unsigned int data) {
   data = analogRead(EKG_INPUT);
-  if (data == 1023) {
-    EKGRawBuffer[EKGCount % 256] = millis();
-    EKGCount++;
-    return millis();
-  } else {
-    return ekgRecord(data);
-  }
+  real[EKGCount % 256] = data;
+  EKGCount++;
+  return data;
 }
 
 /******************************************
@@ -454,17 +454,14 @@ unsigned int rrCorrected(unsigned int data) {
   return dataCorrected;
 }
 
-unsigned int ekgCorrected() {
-  for (int k = 0; k < 256; k++) {
-    for (int n = 0; n < 256; n++) {
-      float theta = ((n*k*2.0)*(M_PI)/(float)(256));
-      int r = EKGRawBuffer[n];
-      real[k] += r*cos(theta);
-      imag[k] -= r*sin(theta);
+unsigned int ekgCorrected(unsigned int data) {
+  unsigned long seconds;
+    for (int i = 0; i < 256; i++) {
+      imag[i] = 0;
     }
-  }
-  unsigned int dataCorrected = optfft((int*)real, (int*)imag);
-  return dataCorrected;
+  unsigned int peakIndex = optfft(real, imag);
+  data = (peakIndex / 256) * (62500);
+  return peakIndex;
 }
 
 /******************************************
