@@ -1,14 +1,9 @@
-#include "optfft.h"
-
 #define BASE_TEN_BASE 10
 #define PR_PIN_IN 2
 #define RR_PIN_IN 2
 #define DELAY_TIME 2
 #define BP_PIN_IN 3
 #define TEMP_INPUT A5
-#define EKG_INPUT A4
-#define SAMPLING_FREQUENCY 1000
-#define SAMPLES 256
 #define switchIn 7
 
 // function headers
@@ -63,9 +58,7 @@ unsigned int diasMeasure;
 unsigned int sysMeasure;
 unsigned int BPTimeOut = 0;
 unsigned char BPFinished = 0;
-unsigned int EKGCount = 0;
-signed int real[256];
-signed int imag[256];
+unsigned long BPTime = 0;
 
 /******************************************
 * Function Name: setup
@@ -172,9 +165,6 @@ void taskDispatcher(byte task,  byte subtask){
         case 5:                                         // Case 5: respirationRateRaw
           returnIntDump = respRate();
           break;
-        case 6:                                         // Case 6: EKGRaw
-          returnIntDump = ekgRecord(dataIntType);
-          break;
       }
       writeBack((char*)&returnIntDump, sizeof(unsigned int));
       break; 
@@ -201,10 +191,6 @@ void taskDispatcher(byte task,  byte subtask){
           returnIntDump = rrCorrected(dataIntType);
           writeBack((char*)&returnIntDump, sizeof(unsigned int));
           break; 
-        case 6:                                         // Case 6: EKGFreqBuf
-          returnIntDump = ekgCorrected(dataIntType);
-          writeBack((char*)&returnIntDump, sizeof(unsigned int));
-          break;
       }
       break;
     case 3:                                             // Case 3: Alarm if out of range
@@ -281,10 +267,7 @@ void isrBP()
   } else if (BPFlag == 0) { 
     BPcount = 0.9 * BPcount;  
   }
-  unsigned long currTime = millis();
-  if (currTime - BPTimeOut >= 7000){
-    BPFinished = 1;
-  }
+  BPTime = millis();
 }
 
 /******************************************
@@ -302,14 +285,17 @@ unsigned int bloodPressure(unsigned int data) {
   attachInterrupt(digitalPinToInterrupt(BP_PIN_IN), isrBP, FALLING);
   BPFlag = digitalRead(switchIn); 
   BPFinished = 0;
-  while(BPFinished == 0){
-  if(BPcount <= 150 && BPcount >= 110 && !sysMeasure) {
+  while(BPFinished == 0){ 
+    if ((signed int)(BPTime - BPTimeOut) >= 3000){
+      BPFinished = 1;
+    }
+    if(BPcount <= 150 && BPcount >= 110 && !sysMeasure) {
       detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
       sysMeasure = 1;
       diasMeasure = 0;
       data = (unsigned int)BPcount;
       BPFinished = 1;
-  } else if (BPcount <= 80 && BPcount >= 50 && !diasMeasure){
+    } else if (BPcount <= 80 && BPcount >= 50 && !diasMeasure){
       detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
       sysMeasure = 0;
       //diasMeasure = 1;
@@ -337,12 +323,11 @@ void isrPR()
 
 /******************************************
 * Function Name: pulseRate
-* Function Inputs: Integer of raw data
+* Function Inputs: None
 * Function Outputs: Integer of processed data
-* Function Description: Increase or decrease the pulse
-*           rate for each function call
-*           based on the current value and function
-*           call count.
+* Function Description: Measure the function generator's 
+*                       input voltage using the interrupt 
+*                       and convert it to an appropriate value.
 * Author: Matt, Michael, Eun Tae
 ******************************************/
 unsigned int pulseRate()
@@ -368,6 +353,15 @@ void isrRR() {
   RRcount++;
 }
 
+/******************************************
+* Function Name: respRate
+* Function Inputs: None
+* Function Outputs: Integer of processed data
+* Function Description: Measure the function generator's 
+*                       input voltage using the interrupt 
+*                       and convert it to an appropriate value.
+* Author: Matt, Michael, Eun Tae
+******************************************/
 unsigned int respRate() {
   attachInterrupt(digitalPinToInterrupt(RR_PIN_IN), isrRR, RISING);
   delay(1000 * DELAY_TIME);
@@ -375,13 +369,6 @@ unsigned int respRate() {
   RRcount = 0;
   detachInterrupt(digitalPinToInterrupt(RR_PIN_IN));
   return respRateData;
-}
-
-unsigned int ekgRecord(unsigned int data) {
-  data = analogRead(EKG_INPUT);
-  real[EKGCount % 256] = data;
-  EKGCount++;
-  return data;
 }
 
 /******************************************
@@ -452,16 +439,6 @@ unsigned int prCorrected(unsigned int data) {
 unsigned int rrCorrected(unsigned int data) {
   unsigned int dataCorrected = 7 + (3 * data);
   return dataCorrected;
-}
-
-unsigned int ekgCorrected(unsigned int data) {
-  unsigned long seconds;
-    for (int i = 0; i < 256; i++) {
-      imag[i] = 0;
-    }
-  unsigned int peakIndex = optfft(real, imag);
-  data = (peakIndex / 256) * (62500);
-  return peakIndex;
 }
 
 /******************************************
@@ -553,26 +530,6 @@ char prRange(unsigned int data) {
 * Author: Matt, Michael, Eun Tae
 ******************************************/
 char rrRange(unsigned int data) { 
-  char result = 1; 
-  unsigned int dataCorrected = 7 + (3 * data);
-  if (dataCorrected >= 12 && dataCorrected <= 25) { 
-    result = 0; 
-  }
-  if (dataCorrected < 11.4 || dataCorrected > 26.25){
-    result = 2;
-  }
-  return result; 
-} 
-
-/******************************************
-* Function Name: rrRange
-* Function Inputs: Integer of raw data
-* Function Outputs: Character, which behaves like boolean
-* Function Description: Checks whether given input breath per minute data
-*           is within the range of normal
-* Author: Matt, Michael, Eun Tae
-******************************************/
-char ekgRange(unsigned int data) { 
   char result = 1; 
   unsigned int dataCorrected = 7 + (3 * data);
   if (dataCorrected >= 12 && dataCorrected <= 25) { 

@@ -3,7 +3,8 @@
 #include <Elegoo_GFX.h>    // Core graphics library
 #include <Elegoo_TFTLCD.h> // Hardware-specific library
 #include <TouchScreen.h>   // Touch Screen for TFT
-
+#include <optfft.h> // FFT library
+#include <math.h> // Sine and PI
 
 #define SUSPENSION 2222
 #define KEYPAD_SCAN_INTERVAL 20
@@ -31,7 +32,7 @@
 #define BP_SCHEDULED 2
 #define PULSE_SCHEDULED 4
 #define RESP_SCHEDULED 8
-#define ekg_SCHEDULED 16
+#define EKG_SCHEDULED 16
 #define LCD_CS A3 // Chip Select goes to Analog 3
 #define LCD_CD A2 // Command/Data goes to Analog 2
 #define LCD_WR A1 // LCD Write goes to Analog 1
@@ -807,15 +808,13 @@ void measureTask(void* data) {
    }
 
    // Measure ekg
-   if (selections & ekg_SCHEDULED) {
-      unsigned long timeStamp = millis();
+   if (selections & EKG_SCHEDULED) {
+      unsigned int samplingFreq = 1000;
       for (int i = 0; i < 256; i++) {
-        requestAndReceive((char*)&(mData->ekgRawBufPtr[i]), sizeof(unsigned int), 
-        (char*)&(mData->ekgRawBufPtr[i]), sizeof(unsigned int), MEASURE_TASK, EKG_RAW_SUBTASK);
-        Serial.println(ekgRawBuf[i]);
+        unsigned int samplingRate = 1000000 / (1.0 * samplingFreq);
+        // Still need to figure out f0
+        ekgRawBuf[i] = 32 * sin(((2 * PI) * f0 * i) / (samplingFreq));
       }
-      addComputeTaskFlag++;
-      remoteScheduled = remoteScheduled | ekg_SCHEDULED;
    }
    
    // Wrap up. clear the selections. notify that the compute task needs to be scheduled
@@ -832,55 +831,56 @@ void computeTask(void* data) {
    if (timer != 0 && (timeElapsed-timer) < SUSPENSION) {
      return;
    }
+   
    // It is our turn. do the compute. Then tell the scheduler to remove us
    timer = timeElapsed;
-   //Serial.print("\nComputeTask Starts\n");
    ComputeData* cData = (ComputeData*)data;
-   // compute temp
+   
+   // Compute temp
    double tempCorrDump;
    requestAndReceive((char*)&(cData->tempRawBufPtr[freshTempCursor]),sizeof(unsigned int),
    (char*)&tempCorrDump, sizeof(double), COMPUTE_TASK, TEMP_RAW_SUBTASK);
-   //Serial.print(tempCorrDump);
-   //Serial.print(" is here\n");
    dtostrf(tempCorrDump, 1, 2, (char*)(cData->tempCorrectedBufPtr[freshTempCursor]));
-   // compute systo
+   
+   // Compute Systo
    unsigned int systoCorrDump;
    requestAndReceive((char*)&(cData->bpRawBufPtr[freshSBPCursor]),sizeof(unsigned int),
    (char*)&systoCorrDump, sizeof(unsigned int), COMPUTE_TASK, SYSTO_RAW_SUBTASK);
    sprintf((char*)(cData->bpCorrectedBufPtr[freshSBPCursor]), "%d", systoCorrDump);
-   //compute diasto
+   
+   //Compute Diasto
    double bpDiastoCorrDump;
    requestAndReceive((char*)&(cData->bpRawBufPtr[freshDBPCursor]),sizeof(unsigned int),
    (char*)&bpDiastoCorrDump, sizeof(double), COMPUTE_TASK, DIASTO_RAW_SUBTASK);
    dtostrf(bpDiastoCorrDump, 1, 2, (char*)(cData->bpCorrectedBufPtr[freshDBPCursor]));
-   //compute pulse
+   
+   //Compute Pulse
    unsigned int prCorrDump;
    requestAndReceive((char*)&(cData->prRawBufPtr[freshPulseCursor]),sizeof(unsigned int),
    (char*)&prCorrDump, sizeof(unsigned int), COMPUTE_TASK, PULSE_RAW_SUBTASK);
    sprintf((char*)(cData->prCorrectedBufPtr[freshPulseCursor]), "%d", prCorrDump);
-   //compute resp
+   
+   //Compute Resp
    unsigned int rrCorrDump;
    requestAndReceive((char*)&(cData->rrRawBufPtr[freshRespCursor]),sizeof(unsigned int),
    (char*)&rrCorrDump, sizeof(unsigned int), COMPUTE_TASK, RESP_RAW_SUBTASK);
    sprintf((char*)(cData->rrCorrectedBufPtr[freshRespCursor]), "%d", rrCorrDump);
-   unsigned int ekgCorrDump;
-   requestAndReceive((char*)&(cData->ekgRawBufPtr[freshEKGCursor]),sizeof(unsigned int),
-   (char*)&ekgCorrDump, sizeof(unsigned int), COMPUTE_TASK, EKG_RAW_SUBTASK);
-   sprintf((char*)(cData->ekgFreqBufPtr[freshEKGCursor]), "%d", ekgCorrDump);
-   freshEKGCursor++;
-   // done. now suicide
+
+   //computeEKG();
+   
+   // Done. now suicide
    addComputeTaskFlag = 0;
-   //Serial.print("nComputeTask Completes\n");
-   return; // getout
+   return;
 }
 
 
 void warningAlarmTask(void* data) {
-  // no timer is needed
+  // No timer is needed
   WarningAlarmData* wData = (WarningAlarmData*)data;
-  // temp store
+  // Temp storage
   char temporaryValue = 0;
-  // temp
+  
+  // Temp
   requestAndReceive((char*)&(wData->tempRawBufPtr[freshTempCursor]),sizeof(unsigned int), (char*)(wData->tempOutOfRangePtr),sizeof(unsigned char), ALARM_TASK , TEMP_RAW_SUBTASK );
   requestAndReceive((char*)&(wData->tempRawBufPtr[freshTempCursor]),sizeof(unsigned int), &temporaryValue,sizeof(unsigned char), WARN_TASK , TEMP_RAW_SUBTASK );
   if (temporaryValue==0) {
@@ -888,7 +888,8 @@ void warningAlarmTask(void* data) {
   } else {
    *(wData->tempHighPtr) = TRUE;
   }
-  // blood pressure
+  
+  // Blood Pressure
   Bool sysWarnResult;
   char sysAlarmResult;
   // two blood pressure types' two stuffs
@@ -914,7 +915,8 @@ void warningAlarmTask(void* data) {
   } else {
     *(wData->bpHighPtr) = TRUE;
   }
-  // pulse
+  
+  // Pulse Rate
   requestAndReceive((char*)&(wData->prRawBufPtr[freshTempCursor]),sizeof(unsigned int), (char*)(wData->pulseOutOfRangePtr), sizeof(unsigned char), ALARM_TASK , PULSE_RAW_SUBTASK);
   requestAndReceive((char*)&(wData->prRawBufPtr[freshTempCursor]),sizeof(unsigned int), &temporaryValue, sizeof(unsigned char), WARN_TASK, PULSE_RAW_SUBTASK);
   if (temporaryValue==0) {
@@ -922,7 +924,8 @@ void warningAlarmTask(void* data) {
   } else {
    *(wData->pulseLowPtr) = TRUE;
   }
-  // respiration rate
+  
+  // Respiration Rate
   requestAndReceive((char*)&(wData->rrRawBufPtr[freshTempCursor]),sizeof(unsigned int), (char*)(wData->respOutOfRangePtr), sizeof(unsigned char), ALARM_TASK, RESP_RAW_SUBTASK);
   requestAndReceive((char*)&(wData->rrRawBufPtr[freshTempCursor]),sizeof(unsigned int), &temporaryValue, sizeof(unsigned char), WARN_TASK , RESP_RAW_SUBTASK);
   if (temporaryValue==0) {
@@ -930,62 +933,57 @@ void warningAlarmTask(void* data) {
   } else {
    *(wData->rrLowPtr) = TRUE;
   }
-  // NOW, lets determine what will be going on here
-  // temperature
+  
+  // Temperature
   if (*(wData->tempOutOfRangePtr)) {
-    // out
     *(wData->tempColorPtr) = ORANGE;
     if (*(wData->tempOutOfRangePtr) == 2){
       flasherIndicator = flasherIndicator | TEMP_SCHEDULED;
-    }else{
+    } else {
       flasherIndicator = flasherIndicator & (~TEMP_SCHEDULED);
     }
   } else {
-    // good
     *(wData->tempColorPtr) = GREEN;
     flasherIndicator = flasherIndicator & (~TEMP_SCHEDULED);
   }
-  // general pressure
+  
+  // Blood Pressure
   if (*(wData->bpOutOfRangePtr)) {
-    // out
     *(wData->systoColorPtr) = ORANGE;
     *(wData->diastoColorPtr) = ORANGE;
     if (*(wData->bpOutOfRangePtr) >= 2){
       flasherIndicator = flasherIndicator | BP_SCHEDULED;
-    }else{
+    } else {
       flasherIndicator = flasherIndicator & (~BP_SCHEDULED);
     }
   } else {
-    // good
     *(wData->systoColorPtr) = GREEN;
     *(wData->diastoColorPtr) = GREEN;
     flasherIndicator = flasherIndicator & (~BP_SCHEDULED);
   }
-  // pulse rate
+  
+  // Pulse Rate
   if (*(wData->pulseOutOfRangePtr)) {
-    // out
     *(wData->pulseColorPtr) = ORANGE;
     if (*(wData->pulseOutOfRangePtr) == 2){
       flasherIndicator = flasherIndicator | PULSE_SCHEDULED;
-    }else{
+    } else {
       flasherIndicator = flasherIndicator & (~PULSE_SCHEDULED);
     }
   } else {
-    // good
     *(wData->pulseColorPtr) = GREEN;
     flasherIndicator = flasherIndicator & (~PULSE_SCHEDULED);
   }
-  // respiration rate
+  
+  // Respiration Rate
   if (*(wData->respOutOfRangePtr)) {
-    // out
     *(wData->respColorPtr) = ORANGE;
     if (*(wData->respOutOfRangePtr) == 2){
       flasherIndicator = flasherIndicator | RESP_SCHEDULED;
-    }else{
+    } else {
       flasherIndicator = flasherIndicator & (~RESP_SCHEDULED);
     }
   } else {
-    // good
     *(wData->respColorPtr) = GREEN;
     flasherIndicator = flasherIndicator & (~RESP_SCHEDULED);
   }
@@ -1026,7 +1024,6 @@ void warningAlarmTask(void* data) {
 
    // Special Case for Temp
   if (!(*(wData->tempOutOfRangePtr)) && (*(wData->tempHighPtr) == FALSE)) {
-    // it is actually ok now
     *(wData->tempColorPtr) = GREEN;
     wData->ackReceived[0] = 0;
     wData->mCountPtr[0] = 0;
@@ -1058,7 +1055,6 @@ void warningAlarmTask(void* data) {
   }
 
    // Special Case for pulse
-     // Special Case for Temp
   if (!(*(wData->pulseOutOfRangePtr)) && (*(wData->pulseLowPtr) == FALSE)) {
     // it is actually ok now
     *(wData->pulseColorPtr) = GREEN;
@@ -1174,13 +1170,6 @@ void remoteComTask(void* data){
   char header = Serial.read();
   if (header != 'X'){
     // it is not a good request. take the char and get out
-    // also notify that it is a bad one. please retry
-//    Serial.write('E');
-//    Serial.write('R');
-//    Serial.write('R');
-//    Serial.write(':');
-//    Serial.write('1');
-//    Serial.write('\n');
     return;
   }
   if (Serial.available()<1){
@@ -1231,7 +1220,7 @@ void remoteComTask(void* data){
         measurementSelection = measurementSelection | RESP_SCHEDULED;
         break; 
       case 'E':                                         // Case 5: ekgRaw
-        measurementSelection = measurementSelection | ekg_SCHEDULED;
+        measurementSelection = measurementSelection | EKG_SCHEDULED;
         break;
       default:                                         // Case 6: Default Error
         Serial.write('E');
@@ -1242,6 +1231,7 @@ void remoteComTask(void* data){
         Serial.write('\n');
         return;
  }
+ // For PuTTY implementation
  /*
   // checks the readin stuffs from the Serial0(Serial)
   if (Serial.available() < 1) {
@@ -1275,7 +1265,7 @@ void remoteComTask(void* data){
           measurementSelection = measurementSelection | BP_SCHEDULED;
           measurementSelection = measurementSelection | PULSE_SCHEDULED;
           measurementSelection = measurementSelection | RESP_SCHEDULED;
-          measurementSelection = measurementSelection | ekg_SCHEDULED;
+          measurementSelection = measurementSelection | EKG_SCHEDULED;
           Serial.write("Input was S \n");
           break;    
         case 'P':                                         // Case P: STOP
@@ -1445,7 +1435,7 @@ void displayTask(void* data) {
         if (flasherIndicator & PULSE_SCHEDULED) {
           // we need to flash
           static long pulseFtimer = 0;
-          if (pulseFtimer!=0 && (millis()-pulseFtimer)<2000) {
+          if (pulseFtimer!=0 && (millis() - pulseFtimer)<2000) {
               tft.setTextColor(*(dData->pulseColorPtr),BACKGROUND_COLOR);
           } else {
               tft.setTextColor(BACKGROUND_COLOR,BACKGROUND_COLOR);
@@ -1456,7 +1446,7 @@ void displayTask(void* data) {
        }
        // Show the PulseRate
        tft.print((char*)(dData->prCorrectedBufPtr[freshPulseCursor]));
-       diff = PULSE_PRESS_DISP_WIDTH-strlen((char*)(dData->prCorrectedBufPtr[freshPulseCursor]));
+       diff = PULSE_PRESS_DISP_WIDTH - strlen((char*)(dData->prCorrectedBufPtr[freshPulseCursor]));
        for (int i = 0; i<diff; i++) {
          tft.print(" ");
        }
@@ -1667,6 +1657,17 @@ void toTerminal(unsigned int inputBuffer, char taskType, char subTaskType) {
   }
   Serial.write('\n');
   return;
+}
+
+unsigned int computeEKG() {
+  signed int imag[256];
+  for (int i = 0; i < 256; i++) {
+    imag[i] = 0;
+  }
+  unsigned int peakIndex = optfft((signed int*)ekgRawBuf, imag);
+  Serial.print("Peak Index is:");
+  Serial.println(peakIndex);
+  return peakIndex;
 }
 
 //  end of EE 474 code
