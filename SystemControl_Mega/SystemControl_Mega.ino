@@ -1159,7 +1159,7 @@ void warningAlarmTask(void* data) {
 * author: Matt
 ******************************************/
 void remoteComTask(void* data){
-  RemComData* remData = (RemComData*) remData;
+  RemComData* remData = (RemComData*) data;
   // checks the readin stuffs from the Serial0(Serial)
   if (Serial.available() < 1) {
     // nothing to be read, get out
@@ -1213,7 +1213,7 @@ void remoteComTask(void* data){
         case 'M':                                         // Case M: RETURN MEASUREED VALUES
           Serial.print("M: Ele the phantom. Ele the fen.\r\n-------------------\r\n");
           Serial.print("  T = ");
-          Serial.print(remData->tempRawBufPtr[0]));
+          Serial.print(remData->tempRawBufPtr[freshTempCursor]);
           Serial.print("  S = ");
           Serial.print(remData->bpRawBufPtr[freshSBPCursor]);
           Serial.print("  D = ");
