@@ -1212,18 +1212,18 @@ void remoteComTask(void* data){
           break; 
         case 'M':                                         // Case M: RETURN MEASUREED VALUES
           Serial.print("M: Ele the phantom. Ele the fen.\r\n-------------------\r\n");
-          Serial.write("  T = ");
-          Serial.write(remData->tempRawBufPtr[freshTempCursor]);
-          Serial.write("  S = ");
-          Serial.write(remData->bpRawBufPtr[freshSBPCursor]);
-          Serial.write("  D = ");
-          Serial.write(remData->bpRawBufPtr[freshDBPCursor]);
-          Serial.write("  P = ");
-          Serial.write(remData->prRawBufPtr[freshPulseCursor]);
-          Serial.write("  R = ");
-          Serial.write(remData->rrRawBufPtr[freshRespCursor]);
-          Serial.write("  E = ");
-          Serial.write(remData->ekgFreqBufPtr[freshEKGCursor]);
+          Serial.print("  T = ");
+          Serial.print(remData->tempRawBufPtr[freshTempCursor]);
+          Serial.print("  S = ");
+          Serial.print(remData->bpRawBufPtr[freshSBPCursor]);
+          Serial.print("  D = ");
+          Serial.print(remData->bpRawBufPtr[freshDBPCursor]);
+          Serial.print("  P = ");
+          Serial.print(remData->prRawBufPtr[freshPulseCursor]);
+          Serial.print("  R = ");
+          Serial.print(remData->rrRawBufPtr[freshRespCursor]);
+          Serial.print("  E = ");
+          Serial.print(remData->ekgFreqBufPtr[freshEKGCursor]);
           Serial.print("-------------------------\r\n");
           break;
         case 'W':                                         // Case W: RETURN WARNINGS
