@@ -520,18 +520,16 @@ void startUpTask() {
    displayTCB = &displayTaskControlBlock;
 
    // Buttons
-   char ButtonText[4][11] = {"Menu",  "Annun", " ", " "};
-   for (int i = 0; i < 2; i++) {
-      for (int j = 0; j < 2; j++) {
-        button[i*2 + j].initButton(&tft, 80 + (160 * j), 177 + (40 * i), BUTTON_W + 20, BUTTON_H, BLACK, BLACK, WHITE, ButtonText[(i * 2) + j], 2);
-      }
+   char ButtonText[4][11] = {"Menu",  "Annun"};
+   for (int j = 0; j < 2; j++) {
+      button[i*2 + j].initButton(&tft, 80 + (160), 177 + (40), BUTTON_W + 20, BUTTON_H, BLACK, BLACK, WHITE, ButtonText[(i * 2) + j], 2);
    }
-   char MenuText[4][11] = {"Temp", "BP", "Pulse", "Resp"};
-   for (int i = 0; i < 4; i++) { 
+   char MenuText[4][11] = {"Temp", "BP", "Pulse", "Resp", "EKG"};
+   for (int i = 0; i < 5; i++) { 
             menuButton[i].initButton(&tft, 155,  30 + (37 * i), BUTTON_W + 120, BUTTON_H - 5, BLUE, BLUE, WHITE, MenuText[i], 2); 
    }
    char AckText[1][4] = {"Ack"};
-   ackButton.initButton(&tft, 150, 140, BUTTON_W, BUTTON_H - 10, MAGENTA, MAGENTA, WHITE, AckText[0], 2);
+   ackButton.initButton(&tft, 150+160, 140, BUTTON_W, BUTTON_H - 10, MAGENTA, MAGENTA, WHITE, AckText[0], 2);
 
    // 5. KeyPad
    // data:
@@ -945,6 +943,8 @@ void warningAlarmTask(void* data) {
   } else {
    *(wData->rrLowPtr) = TRUE;
   }
+
+  //----------------------------------------------------------------------------------------------------------------
   
   // Temperature
   if (*(wData->tempOutOfRangePtr)) {
@@ -1204,6 +1204,8 @@ void remoteComTask(void* data){
           break;
         default:                                          // Case 6: Default
           Serial.write("E: You don't know the Command. You must be a Rebel Scum!!\n");
+          Serial.write(input);
+          Serial.write(" is What we have");
           return;
     }  
   }
@@ -1262,6 +1264,12 @@ void displayTask(void* data) {
          menuButton[3].drawButton(true);
        } else {
          menuButton[3].drawButton(false);
+       }
+        if (selections & EKG_SCHEDULED) {
+          //render temp
+         menuButton[4].drawButton(true);
+       } else {
+         menuButton[4].drawButton(false);
        }
    } else if (*(dData->modeSelection) == 1) {
        // display annunc stuffs
@@ -1388,6 +1396,20 @@ void displayTask(void* data) {
        sprintf(batteryStateBuffer, "%d  ",*(dData->batteryState));
        tft.print(batteryStateBuffer);
        // render the ackButton
+       
+        // EKG
+       tft.setTextColor(STATIC_TEXT_COLOR);
+       tft.print(" EKG(FAKE):     ");
+       // Figure out the color
+       if (*(dData->batteryState) <= BATTERY_LIMIT) {
+          tft.setTextColor(RED, BACKGROUND_COLOR);
+       } else {
+          tft.setTextColor(GREEN, BACKGROUND_COLOR);
+       }
+       char batteryStateBuffer2[9];
+       sprintf(batteryStateBuffer2, "%d  ",*(dData->batteryState));
+       tft.print(batteryStateBuffer2);
+       // render the ackButton
        ackButton.drawButton(false);
        // Thats all
    }
@@ -1451,7 +1473,11 @@ void keypadTask(void* data) {
     if ((*(kData->modeSelection) == 0) && (menuButton[3].contains(x2,y2))) {
       // respiration selected
       *(kData->measurementSelectionPtr) = *(kData->measurementSelectionPtr) | RESP_SCHEDULED;
-    } else
+    }  else
+    if ((*(kData->modeSelection) == 0) && (menuButton[4].contains(x2,y2))) {
+      // EKG selected
+      *(kData->measurementSelectionPtr) = *(kData->measurementSelectionPtr) | EKG_SCHEDULED;
+    }else
     // check if the ack button is clicked
     if ((*(kData->modeSelection) == 1) && (ackButton.contains(x2,y2))) {
       //acked
