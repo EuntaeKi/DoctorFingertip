@@ -25,7 +25,6 @@ unsigned int sysCorrected(unsigned int data);
 double diasCorrected(unsigned int data);
 unsigned int prCorrected(unsigned int data);
 unsigned int rrCorrected(unsigned int data);
-signed int optfft(signed int x[256], signed int y[256]); 
 
 // For alarm
 char tempRange(unsigned int data);
@@ -41,24 +40,18 @@ char diasHigh(unsigned int data);
 char prHigh(unsigned int data);
 char rrHigh(unsigned int data);
 
+// Function generator variables
+volatile byte PRcount = 0;
+volatile byte RRcount = 0;
 
-// Gloabal Variables for Uno
-// Variables for measure and compute functions
-int tempCount;
-int tempFlag;
-int tempMultiplier;
-volatile byte PRcount;
-volatile byte RRcount;
-double BPcount;
-unsigned int BPFlag;
-unsigned int bloodPressureData;
-
-//unsigned long startTime; 
-unsigned int diasMeasure;
-unsigned int sysMeasure;
+// Blood Pressure Variables; 
+unsigned int diasMeasure = 0;
+unsigned int sysMeasure = 0;
 unsigned int BPTimeOut = 0;
 unsigned char BPFinished = 0;
 unsigned long BPTime = 0;
+double BPcount = 80.0;
+unsigned int BPFlag = 1;
 
 /******************************************
 * Function Name: setup
@@ -86,16 +79,6 @@ void setup()
   pinMode(RR_PIN_IN, INPUT_PULLUP);
   pinMode(BP_PIN_IN, INPUT_PULLUP);
   pinMode(switchIn, INPUT); 
-  BPFlag = 1;
-  BPcount = 80.0;
-  PRcount = 0; 
-  RRcount = 0;
-  //startTime = 0; 
-  tempCount = 0;
-  tempMultiplier = -1;
-  tempFlag = 0;
-  diasMeasure = 0;
-  sysMeasure = 0;
 }
 
 /******************************************
@@ -114,7 +97,7 @@ void loop()
 {
   while(Serial.available()<2)
   {
-    // just wait 
+    // Just Wait 
   }
   byte task = Serial.read();
   byte subtask = Serial.read();
@@ -135,10 +118,6 @@ void loop()
 * Author: Matt, Michael, Eun Tae
 ******************************************/
 void taskDispatcher(byte task,  byte subtask){
-  // Measure = 1
-  // Compute = 2
-  // Alarm   = 3
-  // Status  = 4
   unsigned int dataIntType;
   double dataDoubleType;
   unsigned short dataShortType;
@@ -170,8 +149,8 @@ void taskDispatcher(byte task,  byte subtask){
       break; 
     case 2:                                             // Case 2: Compute the data
       Serial.readBytes((char*)&dataIntType, sizeof(unsigned int));
-      switch(subtask){                                  // Case 1: tempCorrected
-        case 1:  
+      switch(subtask){                                  
+        case 1:                                         // Case 1: tempCorrected
           returnDoubleDump = tempCorrected(dataIntType);
           writeBack((char*)&returnDoubleDump, sizeof(double));
           break;
@@ -195,8 +174,8 @@ void taskDispatcher(byte task,  byte subtask){
       break;
     case 3:                                             // Case 3: Alarm if out of range
       Serial.readBytes((char*)&dataIntType, sizeof(unsigned int));
-        switch(subtask){                                // Case 1: tempAlarm
-          case 1:  
+        switch(subtask){                                
+          case 1:                                       // Case 1: tempAlarm
             returnCharDump = tempRange(dataIntType);
             break;
           case 2:                                       // Case 2: sysAlarm                 
@@ -249,9 +228,7 @@ void taskDispatcher(byte task,  byte subtask){
 * Function Inputs: Integer of raw data
 * Function Outputs: Integer of processed data
 * Function Description: Increase or decrease the temperature
-*           for each function call
-*           based on the current value and function
-*           call count.
+*           based on the voltage reading from the TEMP_INPUT port
 * Author: Matt, Michael, Eun Tae
 ******************************************/
 unsigned int temperature(unsigned int data)
@@ -260,14 +237,23 @@ unsigned int temperature(unsigned int data)
   return data;
 }
 
+/*******************************
+ * Function Name:        isrBP
+ * Function Inputs:      None
+ * Function Outputs:     Increment BPcount or decrement based on the switch
+ * Function Description: The interrupt service routine on 
+ *                       positive edge. Counts the every beat on 
+ *                       pulse rate.
+ *                       Update the time isr was called
+ * Author: Matt, Michael, Eun Tae
+ ************************************/
 void isrBP() 
 {
-  if (BPFlag == 1) { 
-    BPcount = 1.1 * BPcount; 
-  } else if (BPFlag == 0) { 
-    BPcount = 0.9 * BPcount;  
-  }
   BPTime = millis();
+  if (BPFlag)
+    BPcount = 1.1 * BPcount; 
+  else
+    BPcount = 0.9 * BPcount;
 }
 
 /******************************************
@@ -314,10 +300,9 @@ unsigned int bloodPressure(unsigned int data) {
  * Function Description: The interrupt service routine on 
  *                       positive edge. Counts the every beat on 
  *                       pulse rate.
- *                       
+ * Author: Matt, Michael, Eun Tae
  ************************************/
-void isrPR() 
-{ 
+void isrPR() { 
   PRcount++;
 }
 
@@ -330,8 +315,7 @@ void isrPR()
 *                       and convert it to an appropriate value.
 * Author: Matt, Michael, Eun Tae
 ******************************************/
-unsigned int pulseRate()
-{
+unsigned int pulseRate() {
   attachInterrupt(digitalPinToInterrupt(PR_PIN_IN), isrPR, RISING);
   delay(1000 * DELAY_TIME);
   unsigned int pulseRateData = (60000 /(1000 * DELAY_TIME) * (PRcount));
@@ -347,7 +331,7 @@ unsigned int pulseRate()
  * Function Description: The interrupt service routine on 
  *                       positive edge. Counts the every beat on 
  *                       respiration rate.
- *                       
+ * Author: Matt, Michael, Eun Tae                       
  ************************************/
 void isrRR() {
   RRcount++;
