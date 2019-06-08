@@ -1213,7 +1213,7 @@ void remoteComTask(void* data){
         case 'M':                                         // Case M: RETURN MEASUREED VALUES
           Serial.print("M: Ele the phantom. Ele the fen.\r\n-------------------\r\n");
           Serial.print("  T = ");
-          Serial.print(temperatureRawBuf[0]);
+          Serial.print(remData->tempRawBufPtr[0]));
           Serial.print("  S = ");
           Serial.print(remData->bpRawBufPtr[freshSBPCursor]);
           Serial.print("  D = ");
