@@ -94,11 +94,11 @@ typedef struct
 
 typedef struct
 {
-  unsigned char** tempCorrectedBufPtr;
-  unsigned char** bpCorrectedBufPtr;
-  unsigned char** prCorrectedBufPtr;
-  unsigned char** rrCorrectedBufPtr;  
-  unsigned char** ekgFreqBufPtr;
+   unsigned int* tempRawBufPtr;
+  unsigned int* bpRawBufPtr;
+  unsigned int* prRawBufPtr;
+  unsigned int* rrRawBufPtr;
+  unsigned int* ekgRawBufPtr;
    Bool* tempHighPtr;
   unsigned char* bpOutOfRangePtr;
   Bool* bpHighPtr;
@@ -564,11 +564,11 @@ void startUpTask() {
 
    // 6.5 Remote Com
    RemComData remData;
-   remData.tempCorrectedBufPtr = tempCorrectedBuf;
-   remData.bpCorrectedBufPtr = bloodPressureCorrectedBuf;
-   remData.prCorrectedBufPtr = pulseRateCorrectedBuf;
-   remData.rrCorrectedBufPtr = respirationRateCorrectedBuf;
-   remData.ekgFreqBufPtr = ekgFreqBuf;
+   remData.tempRawBufPtr = &temperatureRawBuf[0];
+   remData.bpRawBufPtr = &bloodPressureRawBuf[0];;
+   remData.prRawBufPtr = &pulseRateRawBuf[0];
+   remData.rrRawBufPtr = &respirationRateRawBuf[0];
+   remData.ekgRawBufPtr = &ekgRawBuf[0];
    // TCB:
    TCB remoteComTCB;
    remoteComTCB.myTask = remoteComTask;
@@ -1216,17 +1216,17 @@ void remoteComTask(void* data){
         case 'M':                                         // Case M: RETURN MEASUREED VALUES
           Serial.print("M: Ele the phantom. Ele the fen.\r\n-------------------\r\n");
           Serial.write("  T = ");
-          Serial.write((const char*)remData->tempCorrectedBufPtr[freshTempCursor]);
+          Serial.write(remData->tempRawBufPtr[freshTempCursor]);
           Serial.write("  S = ");
-          Serial.write((const char*)remData->bpCorrectedBufPtr[freshSBPCursor]);
+          Serial.write(remData->bpRawBufPtr[freshSBPCursor]);
           Serial.write("  D = ");
-          Serial.write((const char*)remData->bporrectedBufPtr[freshDBPCursor]);
+          Serial.write(remData->bpRawBufPtr[freshDBPCursor]);
           Serial.write("  P = ");
-          Serial.write((const char*)remData->prCorrectedBufPtr[freshPulseCursor]);
+          Serial.write(remData->prRawBufPtr[freshPulseCursor]);
           Serial.write("  R = ");
-          Serial.write((const char*)remData->rrCorrectedBufPtr[freshRespCursor]);
+          Serial.write(remData->rrRawBufPtr[freshRespCursor]);
           Serial.write("  E = ");
-          Serial.write((const char*)remData->ekgFreqBufPtr[freshEKGCursor]);
+          Serial.write()remData->ekgRawBufPtr[freshEKGCursor]);
           Serial.print("-------------------------\r\n");
           break;
         case 'W':                                         // Case W: RETURN WARNINGS
