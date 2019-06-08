@@ -1213,7 +1213,7 @@ void remoteComTask(void* data){
         case 'M':                                         // Case M: RETURN MEASUREED VALUES
           Serial.print("M: Ele the phantom. Ele the fen.\r\n-------------------\r\n");
           Serial.print("  T = ");
-          Serial.print(remData->tempRawBufPtr[freshTempCursor]);
+          Serial.print(sizeof(remData->tempRawBufPtr[freshTempCursor]));
           Serial.print("  S = ");
           Serial.print(remData->bpRawBufPtr[freshSBPCursor]);
           Serial.print("  D = ");
@@ -1225,12 +1225,8 @@ void remoteComTask(void* data){
           Serial.print("  E = ");
           Serial.print(remData->ekgFreqBufPtr[freshEKGCursor]);
           Serial.print("-------------------------\r\n");
-          unsigned int a = 75;
-          int b = 75;
-          Serial.print(a);
+          Serial.print(sizeof(unsigned int));
                     Serial.print("-------------------------\r\n");
-
-          Serial.print(b);
           break;
         case 'W':                                         // Case W: RETURN WARNINGS
           Serial.write("Input was W \r\n");
