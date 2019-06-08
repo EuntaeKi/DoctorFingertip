@@ -1225,6 +1225,12 @@ void remoteComTask(void* data){
           Serial.print("  E = ");
           Serial.print(remData->ekgFreqBufPtr[freshEKGCursor]);
           Serial.print("-------------------------\r\n");
+          unsigned int a = 75;
+          int b = 75;
+          Serial.print(a);
+                    Serial.print("-------------------------\r\n");
+
+          Serial.print(b);
           break;
         case 'W':                                         // Case W: RETURN WARNINGS
           Serial.write("Input was W \r\n");
