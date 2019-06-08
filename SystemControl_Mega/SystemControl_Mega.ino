@@ -98,7 +98,7 @@ typedef struct
   unsigned int* bpRawBufPtr;
   unsigned int* prRawBufPtr;
   unsigned int* rrRawBufPtr;
-  unsigned int* ekgRawBufPtr;
+  unsigned char** ekgFreqBufPtr;
    Bool* tempHighPtr;
   unsigned char* bpOutOfRangePtr;
   Bool* bpHighPtr;
@@ -568,7 +568,7 @@ void startUpTask() {
    remData.bpRawBufPtr = &bloodPressureRawBuf[0];;
    remData.prRawBufPtr = &pulseRateRawBuf[0];
    remData.rrRawBufPtr = &respirationRateRawBuf[0];
-   remData.ekgRawBufPtr = &ekgRawBuf[0];
+   remData.ekgFreqBufPtr = ekgFreqBuf;
    // TCB:
    TCB remoteComTCB;
    remoteComTCB.myTask = remoteComTask;
@@ -1226,7 +1226,7 @@ void remoteComTask(void* data){
           Serial.write("  R = ");
           Serial.write(remData->rrRawBufPtr[freshRespCursor]);
           Serial.write("  E = ");
-          Serial.write()remData->ekgRawBufPtr[freshEKGCursor]);
+          Serial.write(remData->ekgFreqBufPtr[freshEKGCursor]);
           Serial.print("-------------------------\r\n");
           break;
         case 'W':                                         // Case W: RETURN WARNINGS
