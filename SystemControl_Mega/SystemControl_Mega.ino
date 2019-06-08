@@ -99,7 +99,8 @@ typedef struct
   unsigned int* prRawBufPtr;
   unsigned int* rrRawBufPtr;
   unsigned int* ekgFreqBufPtr;
-   Bool* tempHighPtr;
+    unsigned char* tempOutOfRangePtr;
+  Bool* tempHighPtr;
   unsigned char* bpOutOfRangePtr;
   Bool* bpHighPtr;
   unsigned char* pulseOutOfRangePtr;
@@ -110,6 +111,12 @@ typedef struct
   unsigned char* ekgOutOfRangePtr;
   Bool* ekgLowPtr;
   Bool* ekgHighPtr;
+   unsigned int* tempColorPtr;
+  unsigned int* systoColorPtr;
+  unsigned int* diastoColorPtr;
+  unsigned int* pulseColorPtr;
+  unsigned int* respColorPtr;
+  unsigned int* ekgColorPtr;
 } RemComData; 
 
 typedef struct
@@ -135,6 +142,7 @@ typedef struct
   unsigned int* rrRawBufPtr;
   unsigned int* ekgRawBufPtr;
   unsigned short* batteryState;
+  unsigned int* ekgFreqBufPtr;
   unsigned char* tempOutOfRangePtr;
   Bool* tempHighPtr;
   unsigned char* bpOutOfRangePtr;
@@ -153,6 +161,7 @@ typedef struct
   unsigned int* diastoColorPtr;
   unsigned int* pulseColorPtr;
   unsigned int* respColorPtr;
+  unsigned int* ekgColorPtr;
   unsigned char* mCountPtr; 
 } WarningAlarmData;
 
@@ -465,7 +474,6 @@ void startUpTask() {
    warningAlarmData.bpRawBufPtr = &bloodPressureRawBuf[0];
    warningAlarmData.prRawBufPtr = &pulseRateRawBuf[0];
    warningAlarmData.rrRawBufPtr = &respirationRateRawBuf[0];
-   warningAlarmData.tempOutOfRangePtr = &tempOutOfRange;
    warningAlarmData.tempHighPtr = &tempHigh;
    warningAlarmData.bpOutOfRangePtr = &bpOutOfRange;
    warningAlarmData.bpHighPtr = &bpHigh;
@@ -483,7 +491,9 @@ void startUpTask() {
    warningAlarmData.diastoColorPtr = &diastoColor;
    warningAlarmData.pulseColorPtr = &pulseColor;
    warningAlarmData.respColorPtr = &respColor;
+   warningAlarmData.ekgColorPtr = &ekgColor;
    warningAlarmData.mCountPtr = mCount;
+   warningAlarmData.ekgFreqBufPtr = &ekgFreqBuf[0];;
 
    // TCB:
    TCB warningAlarmTCBlock;
@@ -566,6 +576,12 @@ void startUpTask() {
    remData.prRawBufPtr = &pulseRateRawBuf[0];
    remData.rrRawBufPtr = &respirationRateRawBuf[0];
    remData.ekgFreqBufPtr = &ekgFreqBuf[0];
+   remData.tempColorPtr = &tempColor;
+   remData.systoColorPtr = &systoColor;
+   remData.diastoColorPtr = &diastoColor;
+   remData.pulseColorPtr = &pulseColor;
+   remData.respColorPtr = &respColor;
+   remData.ekgColorPtr = &ekgColor;
    // TCB:
    TCB remoteComTCB;
    remoteComTCB.myTask = remoteComTask;
@@ -881,7 +897,7 @@ void computeTask(void* data) {
    sprintf((char*)(cData->rrCorrectedBufPtr[freshRespCursor]), "%d", rrCorrDump);
 
    ekgFreqBuf[freshEKGCursor] = computeEKG();
-   freshEKGCursor++;
+   freshEKGCursor = (freshEKGCursor +1)%8;
 
    
    // Done. now suicide
@@ -949,6 +965,11 @@ void warningAlarmTask(void* data) {
   } else {
    *(wData->rrLowPtr) = TRUE;
   }
+
+  if (wData->ekgFreqBuf[freshEKGCursor]<35 || wData->ekgFreqBuf[freshEKGCursor]>3550){
+    *(wData->ekgLowPtr)=TRUE;
+  }
+  
 
   //----------------------------------------------------------------------------------------------------------------
   
@@ -1137,10 +1158,26 @@ void warningAlarmTask(void* data) {
       } 
     }
   }
+  
+  if (*(wData->ekgLowPtr)==TRUE){
+    *(wData->ekgColorPtr) = ORANGE;
+  }else{
+    *(wData->ekgColorPtr) = GREEN;
+  }
+
   return; // done. get out
 }
 
+void printWarn(unsigned int color){
+  if (color == ORANGE){
+    Serial.print(" Orange\r\n");
+  }else if (color == RED){
+        Serial.print(" Red\r\n");
+  }else{
+        Serial.print(" Green\r\n");
 
+  }
+}
 
 /******************************************
 * function name: remoteComTask
@@ -1224,12 +1261,23 @@ void remoteComTask(void* data){
           Serial.print(remData->rrRawBufPtr[freshRespCursor]);
           Serial.print("  E = ");
           Serial.print(remData->ekgFreqBufPtr[freshEKGCursor]);
-          Serial.print("-------------------------\r\n");
-          Serial.print(sizeof(unsigned int));
-                    Serial.print("-------------------------\r\n");
+          Serial.print("\r\n-------------------------\r\n");
           break;
         case 'W':                                         // Case W: RETURN WARNINGS
-          Serial.write("Input was W \r\n");
+           Serial.print("W: Ele the phantom. Ele the fen.\r\n-------------------\r\n");
+          Serial.print("  T = ");
+          printWarn(*(remData.tempColorPtr));
+          Serial.print("  S = ");
+          printWarn(*(remData.systoColorPtr));
+          Serial.print("  D = ");
+          printWarn(*(remData.diastoColorPtr));
+          Serial.print("  P = ");
+          printWarn(*(remData.pulseColorPtr));
+          Serial.print("  R = ");
+          printWarn(*(remData.respColorPtr));
+          Serial.print("  E = ");
+          printWarn(*(remData.ekgColorPtr));
+          Serial.print("\r\n-------------------------\r\n");
           break;
         default:                                          // Case 6: Default
           Serial.write("E: You don't know the Command. You must be a Rebel Scum!!\n");
@@ -1429,13 +1477,11 @@ void displayTask(void* data) {
        tft.setTextColor(STATIC_TEXT_COLOR);
        tft.print(" \n EKG:        ");
        // Figure out the color
-       if (*(dData->batteryState) <= BATTERY_LIMIT) {
-          tft.setTextColor(RED, BACKGROUND_COLOR);
-       } else {
-          tft.setTextColor(GREEN, BACKGROUND_COLOR);
-       }
+
+          tft.setTextColor(*(dData->ekgColorPtr), BACKGROUND_COLOR);
+       
        char batteryStateBuffer2[9];
-       sprintf(batteryStateBuffer2, "%d  ",*(dData->batteryState));
+       sprintf(batteryStateBuffer2, "%d  ",dData->ekgFreqBuf[freshEKGCursor]);
        tft.print(batteryStateBuffer2);
        // render the ackButton
        ackButton.drawButton(false);
