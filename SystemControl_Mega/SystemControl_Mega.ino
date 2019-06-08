@@ -97,7 +97,7 @@ typedef struct
   unsigned int* tempRawBufPtr;
   unsigned int* bpRawBufPtr;
   unsigned int* prRawBufPtr;
-  unsigned int* rrRawBufPtr;  
+  unsigned int* rrRawBufPtr; 
   unsigned char** ekgFreqBufPtr;
    Bool* tempHighPtr;
   unsigned char* bpOutOfRangePtr;
@@ -220,6 +220,7 @@ void executeTCB(TCB* taskControlBlock);
 // TaskQueue Management
 void insertTask(TCB* task);
 void deleteTask(TCB* task);
+char compareData(unsigned int oldData, unsigned int newData);
 // TFT Related
 Elegoo_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 TouchScreen ts = TouchScreen(XP, YP ,XM , YM, 300);
@@ -256,8 +257,8 @@ unsigned int diastoColor = GREEN;
 unsigned int pulseColor = GREEN;
 unsigned int respColor = GREEN;
 unsigned int ekgColor = GREEN;
-Elegoo_GFX_Button button[4];
-Elegoo_GFX_Button menuButton[4];
+Elegoo_GFX_Button button[2];
+Elegoo_GFX_Button menuButton[5];
 Elegoo_GFX_Button ackButton;
 // Global Variables for Function Counter
 unsigned char freshTempCursor = 0;
@@ -298,6 +299,9 @@ unsigned int flasherIndicator = 0;
 unsigned char remoteOn = 0;
 unsigned char displayOn = 1;
 unsigned char commanderMode = NEUTRAL;
+
+unsigned int samplingFreq;
+double samplingRate;
 
 
 /******************************************
@@ -520,16 +524,16 @@ void startUpTask() {
    displayTCB = &displayTaskControlBlock;
 
    // Buttons
-   char ButtonText[4][11] = {"Menu",  "Annun"};
+   char ButtonText[2][11] = {"Menu",  "Annun"};
    for (int j = 0; j < 2; j++) {
-      button[i*2 + j].initButton(&tft, 80 + (160), 177 + (40), BUTTON_W + 20, BUTTON_H, BLACK, BLACK, WHITE, ButtonText[(i * 2) + j], 2);
+      button[j].initButton(&tft, 80 + (160*j), 177 + (40), BUTTON_W + 20, BUTTON_H, BLACK, BLACK, WHITE, ButtonText[j], 2);
    }
-   char MenuText[4][11] = {"Temp", "BP", "Pulse", "Resp", "EKG"};
+   char MenuText[5][11] = {"Temp", "BP", "Pulse", "Resp", "EKG"};
    for (int i = 0; i < 5; i++) { 
             menuButton[i].initButton(&tft, 155,  30 + (37 * i), BUTTON_W + 120, BUTTON_H - 5, BLUE, BLUE, WHITE, MenuText[i], 2); 
    }
    char AckText[1][4] = {"Ack"};
-   ackButton.initButton(&tft, 150+160, 140, BUTTON_W, BUTTON_H - 10, MAGENTA, MAGENTA, WHITE, AckText[0], 2);
+   ackButton.initButton(&tft, 150, 140+40, BUTTON_W, BUTTON_H - 10, MAGENTA, MAGENTA, WHITE, AckText[0], 2);
 
    // 5. KeyPad
    // data:
@@ -561,7 +565,7 @@ void startUpTask() {
    // 6.5 Remote Com
    RemComData remData;
    remData.tempRawBufPtr = &temperatureRawBuf[0];
-   remData.bpRawBufPtr = &bloodPressureRawBuf[0];;
+   remData.bpRawBufPtr = &bloodPressureRawBuf[0];
    remData.prRawBufPtr = &pulseRateRawBuf[0];
    remData.rrRawBufPtr = &respirationRateRawBuf[0];
    remData.ekgFreqBufPtr = ekgFreqBuf;
@@ -744,7 +748,7 @@ void measureTask(void* data) {
      if(compareData(mData->tempRawBufPtr[oldTempCursor], mData->tempRawBufPtr[freshTempCursor])) {
         mData->tempRawBufPtr[freshTempCursor] = oldTempData;
         freshTempCursor = (freshTempCursor - 1) % 8;
-        Serial.print("Rolled Back\n");
+        //Serial.print("Rolled Back\n");
      }
      if (mData->mCountPtr[0] > 0) {
         // alarm is expecting us to count how many times we are called.
@@ -786,7 +790,7 @@ void measureTask(void* data) {
      if(compareData(mData->prRawBufPtr[oldPulseCursor], mData->prRawBufPtr[freshPulseCursor])) {
         mData->prRawBufPtr[freshPulseCursor] = oldPulseData;
         freshPulseCursor = (freshPulseCursor - 1) % 8;
-        Serial.print("Rolled Back\n");
+        //Serial.print("Rolled Back\n");
      }
      if (mData->mCountPtr[1] > 0) {
         // alarm is expecting us to count how many times we are called.
@@ -807,7 +811,7 @@ void measureTask(void* data) {
      if(compareData(mData->rrRawBufPtr[oldRespCursor], mData->rrRawBufPtr[freshRespCursor])) {
         mData->rrRawBufPtr[freshRespCursor] = oldRespData;
         freshRespCursor = (freshRespCursor - 1) % 8;
-        Serial.print("Rolled Back\n");
+       // Serial.print("Rolled Back\n");
      }
      if (mData->mCountPtr[3] > 0) {
         // alarm is expecting us to count how many times we are called.
@@ -817,15 +821,18 @@ void measureTask(void* data) {
      remoteScheduled = remoteScheduled | RESP_SCHEDULED;
    }
 
-   // Measure ekg
+   /*// Measure ekg
    if (selections & EKG_SCHEDULED) {
-      unsigned int samplingFreq = 1000;
+      samplingFreq = 500;
+      samplingRate = 1.0 / (3.0 * samplingFreq);
+      double t = 0;
       for (int i = 0; i < 256; i++) {
-        unsigned int samplingRate = 1000000 / (1.0 * samplingFreq);
-        // Still need to figure out f0
-        ekgRawBuf[i] = 32 * sin(((2 * PI) * f0 * i) / (samplingFreq));
+        ekgRawBuf[i] = (int)(10.0 * sin(2 * PI * samplingFreq * t));
+        t = samplingRate + t;
       }
-   }
+      addComputeTaskFlag++;  // just add one. repetition has been dealt with.
+      remoteScheduled = remoteScheduled | EKG_SCHEDULED;
+   }*/
    
    // Wrap up. clear the selections. notify that the compute task needs to be scheduled
    *(mData->measurementSelectionPtr) = 0;
@@ -876,7 +883,9 @@ void computeTask(void* data) {
    (char*)&rrCorrDump, sizeof(unsigned int), COMPUTE_TASK, RESP_RAW_SUBTASK);
    sprintf((char*)(cData->rrCorrectedBufPtr[freshRespCursor]), "%d", rrCorrDump);
 
-   //computeEKG();
+   ekgFreqBuf[freshEKGCursor] = (unsigned char*)computeEKG();
+   freshEKGCursor++;
+
    
    // Done. now suicide
    addComputeTaskFlag = 0;
@@ -1153,6 +1162,7 @@ void warningAlarmTask(void* data) {
 * author: Matt
 ******************************************/
 void remoteComTask(void* data){
+  RemComData* remData = (RemComData*) remData;
   // checks the readin stuffs from the Serial0(Serial)
   if (Serial.available() < 1) {
     // nothing to be read, get out
@@ -1162,7 +1172,7 @@ void remoteComTask(void* data){
   char input = Serial.read();
   if (input == 'I') {
     remoteOn = 1;
-    Serial.write("Connection Established!\----------\nWhat is thy bidding, my master?\n\n");
+    Serial.write("Connection Established!\r\n----------\r\nWhat is thy bidding, my master?\r\n\n");
   }
   // it is a request, deal with it 
   if (remoteOn == 1 && input != 'I') { 
@@ -1174,33 +1184,33 @@ void remoteComTask(void* data){
           measurementSelection = measurementSelection | PULSE_SCHEDULED;
           measurementSelection = measurementSelection | RESP_SCHEDULED;
           measurementSelection = measurementSelection | EKG_SCHEDULED;
-          Serial.write("S: Roger. We may fire when ready \n");
+          Serial.write("S: Roger. We may fire when ready \r\n");
           break;    
         case 'P':                                         // Case P: STOP
           commanderMode = STOP;
-          Serial.write("P: Roger. Executing order 66\n");
+          Serial.write("P: Roger. Executing order 66\r\n");
           break;  
         case 'D':                                         // Case D: DISPLAY    
           if (displayOn){
             displayOn = 0;
-            Serial.write("D: Roger. Now they are blinded by the dark side of the force\n");
+            Serial.write("D: Roger. Now they are blinded by the dark side of the force\r\n");
           } else {
             displayOn = 1;
-            Serial.write("D: Roger, Now they will see through the lies of the Jedi.\n");
+            Serial.write("D: Roger, Now they will see through the lies of the Jedi.\r\n");
           }
           break; 
         case 'M':                                         // Case M: RETURN MEASUREED VALUES
-          Serial.write("M: Ele the phantom. Ele the fen.\n-------------------");
+          Serial.print("M: Ele the phantom. Ele the fen.\r\n-------------------\r\n");
           toTerminal((remData->tempRawBufPtr[freshTempCursor]),'T', '=');
           toTerminal((remData->bpRawBufPtr[freshSBPCursor]),'S', '=');
           toTerminal((remData->bpRawBufPtr[freshDBPCursor]),'D', '=');
           toTerminal((remData->prRawBufPtr[freshPulseCursor]),'P', '=');
           toTerminal((remData->rrRawBufPtr[freshRespCursor]),'R', '=');
-          toTerminal((remData->ekgFreqBufPtr[freshEKGCursor]),'E', '='); 
-          Serial.write("-------------------------\n");
+          //Serial.write((char*)(remData->ekgFreqBufPtr[freshEKGCursor])); 
+          //Serial.print("-------------------------\r\n");
           break;
         case 'W':                                         // Case W: RETURN WARNINGS
-          Serial.write("Input was W \n");
+          Serial.write("Input was W \r\n");
           break;
         default:                                          // Case 6: Default
           Serial.write("E: You don't know the Command. You must be a Rebel Scum!!\n");
@@ -1210,7 +1220,6 @@ void remoteComTask(void* data){
     }  
   }
   }
-}
 
 /******************************************
 * function name: displayTask
@@ -1229,7 +1238,7 @@ void displayTask(void* data) {
    }
    DisplayData* dData = (DisplayData*)data;
    // render the bottom buttons first base on mode selection
-   for (int i = 0; i < 4; i++) {
+   for (int i = 0; i < 2; i++) {
      if (*(dData->modeSelection) == i ) {
        button[i].drawButton(true);
      } else {
@@ -1399,7 +1408,7 @@ void displayTask(void* data) {
        
         // EKG
        tft.setTextColor(STATIC_TEXT_COLOR);
-       tft.print(" EKG(FAKE):     ");
+       tft.print(" \n EKG:        ");
        // Figure out the color
        if (*(dData->batteryState) <= BATTERY_LIMIT) {
           tft.setTextColor(RED, BACKGROUND_COLOR);
@@ -1572,7 +1581,6 @@ void requestAndReceive(char* inputBuffer, char inputLength , char* outputBuffer,
   return;
 }
 
-
 /******************************************
 * function name: toTerminal
 * function inputs:  char* to set input buffer,
@@ -1596,15 +1604,15 @@ void toTerminal(unsigned int inputBuffer, char taskType, char subTaskType) {
   return;
 }
 
+
 unsigned int computeEKG() {
   signed int imag[256];
   for (int i = 0; i < 256; i++) {
     imag[i] = 0;
   }
   unsigned int peakIndex = optfft((signed int*)ekgRawBuf, imag);
-  Serial.print("Peak Index is:");
-  Serial.println(peakIndex);
-  return peakIndex;
+  unsigned int output = (peakIndex * (1 / samplingRate) / 256);
+  return output;
 }
 
 //  end of EE 474 code
