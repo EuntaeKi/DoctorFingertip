@@ -94,10 +94,10 @@ typedef struct
 
 typedef struct
 {
-  unsigned int* tempRawBufPtr;
-  unsigned int* bpRawBufPtr;
-  unsigned int* prRawBufPtr;
-  unsigned int* rrRawBufPtr; 
+  unsigned char** tempCorrectedBufPtr;
+  unsigned char** bpCorrectedBufPtr;
+  unsigned char** prCorrectedBufPtr;
+  unsigned char** rrCorrectedBufPtr;  
   unsigned char** ekgFreqBufPtr;
    Bool* tempHighPtr;
   unsigned char* bpOutOfRangePtr;
@@ -299,7 +299,7 @@ unsigned int flasherIndicator = 0;
 unsigned char remoteOn = 0;
 unsigned char displayOn = 1;
 unsigned char commanderMode = NEUTRAL;
-
+unsigned char measureCursor = 0;
 unsigned int samplingFreq;
 double samplingRate;
 
@@ -564,10 +564,10 @@ void startUpTask() {
 
    // 6.5 Remote Com
    RemComData remData;
-   remData.tempRawBufPtr = &temperatureRawBuf[0];
-   remData.bpRawBufPtr = &bloodPressureRawBuf[0];
-   remData.prRawBufPtr = &pulseRateRawBuf[0];
-   remData.rrRawBufPtr = &respirationRateRawBuf[0];
+   remData.tempCorrectedBufPtr = tempCorrectedBuf;
+   remData.bpCorrectedBufPtr = bloodPressureCorrectedBuf;
+   remData.prCorrectedBufPtr = pulseRateCorrectedBuf;
+   remData.rrCorrectedBufPtr = respirationRateCorrectedBuf;
    remData.ekgFreqBufPtr = ekgFreqBuf;
    // TCB:
    TCB remoteComTCB;
@@ -1179,14 +1179,26 @@ void remoteComTask(void* data){
     switch(input){
         case 'S':                                         // Case S: START MEASURE
           commanderMode = START;
+          Serial.write("S: Roger. We may fire when ready -- ");
           if (measurementSelection == 0){
-          measurementSelection = measurementSelection | TEMP_SCHEDULED;
-//          measurementSelection = measurementSelection | BP_SCHEDULED;
-//          measurementSelection = measurementSelection | PULSE_SCHEDULED;
-//          measurementSelection = measurementSelection | RESP_SCHEDULED;
-//          measurementSelection = measurementSelection | EKG_SCHEDULED;
+            if (measureCursor == 0){
+                measurementSelection = measurementSelection | TEMP_SCHEDULED;
+                Serial.write("Temperature neutralized. Next will be Blood Pressure\r\n");
+            }else if (measureCursor == 1){
+                measurementSelection = measurementSelection | BP_SCHEDULED;
+                Serial.write("Blood Pressure neutralized. Next will be Pulse Rate\r\n");
+            }else if (measureCursor ==2){
+                measurementSelection = measurementSelection | PULSE_SCHEDULED;
+                Serial.write("Pulse Rate. Next will be Respiration Rate\r\n");
+            }else if (measureCursor == 3){
+                measurementSelection = measurementSelection | RESP_SCHEDULED;
+                Serial.write("Respiration Rate neutralized. Next will be EKG\r\n");
+            }else{
+                measurementSelection = measurementSelection | EKG_SCHEDULED;
+                Serial.write("EKG neutralized. Next will be Temperature\r\n");
+            }
+            measureCursor = (measureCursor+1)%5;
           }
-          Serial.write("S: Roger. We may fire when ready \r\n");
           break;    
         case 'P':                                         // Case P: STOP
           commanderMode = STOP;
@@ -1203,13 +1215,19 @@ void remoteComTask(void* data){
           break; 
         case 'M':                                         // Case M: RETURN MEASUREED VALUES
           Serial.print("M: Ele the phantom. Ele the fen.\r\n-------------------\r\n");
-//          toTerminal((remData->tempRawBufPtr[freshTempCursor]),'T', '=');
-//          toTerminal((remData->bpRawBufPtr[freshSBPCursor]),'S', '=');
-//          toTerminal((remData->bpRawBufPtr[freshDBPCursor]),'D', '=');
-//          toTerminal((remData->prRawBufPtr[freshPulseCursor]),'P', '=');
-//          toTerminal((remData->rrRawBufPtr[freshRespCursor]),'R', '=');
-          //Serial.write((char*)(remData->ekgFreqBufPtr[freshEKGCursor])); 
-          //Serial.print("-------------------------\r\n");
+          Serial.write("  T = ");
+          Serial.write((const char*)remData->tempCorrectedBufPtr[freshTempCursor]);
+          Serial.write("  S = ");
+          Serial.write((const char*)remData->bpCorrectedBufPtr[freshSBPCursor]);
+          Serial.write("  D = ");
+          Serial.write((const char*)remData->bporrectedBufPtr[freshDBPCursor]);
+          Serial.write("  P = ");
+          Serial.write((const char*)remData->prCorrectedBufPtr[freshPulseCursor]);
+          Serial.write("  R = ");
+          Serial.write((const char*)remData->rrCorrectedBufPtr[freshRespCursor]);
+          Serial.write("  E = ");
+          Serial.write((const char*)remData->ekgFreqBufPtr[freshEKGCursor]);
+          Serial.print("-------------------------\r\n");
           break;
         case 'W':                                         // Case W: RETURN WARNINGS
           Serial.write("Input was W \r\n");
