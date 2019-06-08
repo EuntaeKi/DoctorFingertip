@@ -821,7 +821,7 @@ void measureTask(void* data) {
      remoteScheduled = remoteScheduled | RESP_SCHEDULED;
    }
 
-   /*// Measure ekg
+   // Measure ekg
    if (selections & EKG_SCHEDULED) {
       samplingFreq = 500;
       samplingRate = 1.0 / (3.0 * samplingFreq);
@@ -832,7 +832,7 @@ void measureTask(void* data) {
       }
       addComputeTaskFlag++;  // just add one. repetition has been dealt with.
       remoteScheduled = remoteScheduled | EKG_SCHEDULED;
-   }*/
+   }
    
    // Wrap up. clear the selections. notify that the compute task needs to be scheduled
    *(mData->measurementSelectionPtr) = 0;
@@ -1181,10 +1181,10 @@ void remoteComTask(void* data){
           commanderMode = START;
           if (measurementSelection == 0){
           measurementSelection = measurementSelection | TEMP_SCHEDULED;
-          measurementSelection = measurementSelection | BP_SCHEDULED;
-          measurementSelection = measurementSelection | PULSE_SCHEDULED;
-          measurementSelection = measurementSelection | RESP_SCHEDULED;
-          measurementSelection = measurementSelection | EKG_SCHEDULED;
+//          measurementSelection = measurementSelection | BP_SCHEDULED;
+//          measurementSelection = measurementSelection | PULSE_SCHEDULED;
+//          measurementSelection = measurementSelection | RESP_SCHEDULED;
+//          measurementSelection = measurementSelection | EKG_SCHEDULED;
           }
           Serial.write("S: Roger. We may fire when ready \r\n");
           break;    
@@ -1203,11 +1203,11 @@ void remoteComTask(void* data){
           break; 
         case 'M':                                         // Case M: RETURN MEASUREED VALUES
           Serial.print("M: Ele the phantom. Ele the fen.\r\n-------------------\r\n");
-          toTerminal((remData->tempRawBufPtr[freshTempCursor]),'T', '=');
-          toTerminal((remData->bpRawBufPtr[freshSBPCursor]),'S', '=');
-          toTerminal((remData->bpRawBufPtr[freshDBPCursor]),'D', '=');
-          toTerminal((remData->prRawBufPtr[freshPulseCursor]),'P', '=');
-          toTerminal((remData->rrRawBufPtr[freshRespCursor]),'R', '=');
+//          toTerminal((remData->tempRawBufPtr[freshTempCursor]),'T', '=');
+//          toTerminal((remData->bpRawBufPtr[freshSBPCursor]),'S', '=');
+//          toTerminal((remData->bpRawBufPtr[freshDBPCursor]),'D', '=');
+//          toTerminal((remData->prRawBufPtr[freshPulseCursor]),'P', '=');
+//          toTerminal((remData->rrRawBufPtr[freshRespCursor]),'R', '=');
           //Serial.write((char*)(remData->ekgFreqBufPtr[freshEKGCursor])); 
           //Serial.print("-------------------------\r\n");
           break;
