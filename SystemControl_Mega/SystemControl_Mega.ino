@@ -98,7 +98,7 @@ typedef struct
   unsigned int* bpRawBufPtr;
   unsigned int* prRawBufPtr;
   unsigned int* rrRawBufPtr;
-  unsigned char** ekgFreqBufPtr;
+  unsigned int* ekgFreqBufPtr;
    Bool* tempHighPtr;
   unsigned char* bpOutOfRangePtr;
   Bool* bpHighPtr;
@@ -123,7 +123,7 @@ typedef struct
   unsigned char** bpCorrectedBufPtr;
   unsigned char** prCorrectedBufPtr;
   unsigned char** rrCorrectedBufPtr;  
-  unsigned char** ekgFreqBufPtr;
+  unsigned int* ekgFreqBufPtr;
 } ComputeData; 
 
 
@@ -164,7 +164,7 @@ typedef struct
   unsigned char** bpCorrectedBufPtr;
   unsigned char** prCorrectedBufPtr;  
   unsigned char** rrCorrectedBufPtr;  
-  unsigned char** ekgFreqBufPtr;
+  unsigned int* ekgFreqBufPtr;
   unsigned short* batteryState;
   unsigned int* tempColorPtr;
   unsigned int* systoColorPtr;
@@ -250,7 +250,7 @@ unsigned char* tempCorrectedBuf[8];
 unsigned char* bloodPressureCorrectedBuf[16];
 unsigned char* pulseRateCorrectedBuf[8];
 unsigned char* respirationRateCorrectedBuf[8];
-unsigned char* ekgFreqBuf[16];
+unsigned int ekgFreqBuf[16];
 unsigned int tempColor = GREEN;
 unsigned int systoColor = GREEN;
 unsigned int diastoColor = GREEN;
@@ -432,7 +432,7 @@ void startUpTask() {
    computeData.bpCorrectedBufPtr = bloodPressureCorrectedBuf;
    computeData.prCorrectedBufPtr = pulseRateCorrectedBuf;
    computeData.rrCorrectedBufPtr = respirationRateCorrectedBuf;
-   computeData.ekgFreqBufPtr = ekgFreqBuf;
+   computeData.ekgFreqBufPtr = &ekgFreqBuf[0];
    for (int i = 0; i < 8; i++) {
      tempCorrectedBuf[i] = (unsigned char*)malloc(MAX_STR_BUF_LEN);
    }
@@ -444,9 +444,6 @@ void startUpTask() {
    }
    for (int i = 0; i < 8; i++) {
      respirationRateCorrectedBuf[i] = (unsigned char*)malloc(MAX_STR_BUF_LEN);
-   }
-   for (int i = 0; i < 16; i++) {
-     ekgFreqBuf[i] = (unsigned char*)malloc(MAX_STR_BUF_LEN);
    }
    strcpy((char*)tempCorrectedBuf[0], initialTempDisplay);
    strcpy((char*)bloodPressureCorrectedBuf[0], initialSystoDisplay);
@@ -503,7 +500,7 @@ void startUpTask() {
    displayData.bpCorrectedBufPtr = bloodPressureCorrectedBuf;
    displayData.prCorrectedBufPtr = pulseRateCorrectedBuf;
    displayData.rrCorrectedBufPtr = respirationRateCorrectedBuf;
-   displayData.ekgFreqBufPtr = ekgFreqBuf;
+   displayData.ekgFreqBufPtr = &ekgFreqBuf[0];
    displayData.batteryState = &batteryState;
    displayData.tempColorPtr = &tempColor;
    displayData.systoColorPtr = &systoColor;
@@ -568,7 +565,7 @@ void startUpTask() {
    remData.bpRawBufPtr = &bloodPressureRawBuf[0];;
    remData.prRawBufPtr = &pulseRateRawBuf[0];
    remData.rrRawBufPtr = &respirationRateRawBuf[0];
-   remData.ekgFreqBufPtr = ekgFreqBuf;
+   remData.ekgFreqBufPtr = &ekgFreqBuf[0];
    // TCB:
    TCB remoteComTCB;
    remoteComTCB.myTask = remoteComTask;
@@ -883,7 +880,7 @@ void computeTask(void* data) {
    (char*)&rrCorrDump, sizeof(unsigned int), COMPUTE_TASK, RESP_RAW_SUBTASK);
    sprintf((char*)(cData->rrCorrectedBufPtr[freshRespCursor]), "%d", rrCorrDump);
 
-   ekgFreqBuf[freshEKGCursor] = (unsigned char*)computeEKG();
+   ekgFreqBuf[freshEKGCursor] = computeEKG();
    freshEKGCursor++;
 
    
