@@ -1179,11 +1179,13 @@ void remoteComTask(void* data){
     switch(input){
         case 'S':                                         // Case S: START MEASURE
           commanderMode = START;
+          if (measurementSelection == 0){
           measurementSelection = measurementSelection | TEMP_SCHEDULED;
           measurementSelection = measurementSelection | BP_SCHEDULED;
           measurementSelection = measurementSelection | PULSE_SCHEDULED;
           measurementSelection = measurementSelection | RESP_SCHEDULED;
           measurementSelection = measurementSelection | EKG_SCHEDULED;
+          }
           Serial.write("S: Roger. We may fire when ready \r\n");
           break;    
         case 'P':                                         // Case P: STOP
