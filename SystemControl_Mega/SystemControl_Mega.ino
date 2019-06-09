@@ -259,7 +259,7 @@ unsigned char* tempCorrectedBuf[8];
 unsigned char* bloodPressureCorrectedBuf[16];
 unsigned char* pulseRateCorrectedBuf[8];
 unsigned char* respirationRateCorrectedBuf[8];
-unsigned int ekgFreqBuf[16];
+unsigned int ekgFreqBuf[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 unsigned int tempColor = GREEN;
 unsigned int systoColor = GREEN;
 unsigned int diastoColor = GREEN;
@@ -309,7 +309,7 @@ unsigned char remoteOn = 0;
 unsigned char displayOn = 1;
 unsigned char commanderMode = NEUTRAL;
 unsigned char measureCursor = 0;
-unsigned int samplingFreq;
+unsigned int sampleFreq;
 double samplingRate;
 
 
@@ -776,13 +776,17 @@ void measureTask(void* data) {
      // Measure Systolic
      unsigned char oldSBPCursor  = freshSBPCursor;
      freshSBPCursor  = (freshSBPCursor  + 1) % 8;
+     Serial.println("Systolic Called");
      requestAndReceive((char*)&(mData->bpRawBufPtr[oldSBPCursor]), sizeof(unsigned int), 
      (char*)&(mData->bpRawBufPtr[freshSBPCursor]), sizeof(unsigned int), MEASURE_TASK, SYSTO_RAW_SUBTASK);
+     Serial.println("Systolic Done");
      // Measure Diastolic
      unsigned char oldDBPCursor  = freshDBPCursor;
      freshDBPCursor  = ((freshDBPCursor + 1) % 8) + 8;
+     Serial.println("Diastolic Called");
      requestAndReceive((char*)&(mData->bpRawBufPtr[oldDBPCursor]), sizeof(unsigned int), 
      (char*)&(mData->bpRawBufPtr[freshDBPCursor]), sizeof(unsigned int), MEASURE_TASK, DIASTO_RAW_SUBTASK);
+     Serial.println("Diastolic Done");
      // do the systo alarm increment
      if (mData->mCountPtr[2] > 0) {
         // alarm is expecting us to count how many times we are called.
@@ -836,11 +840,11 @@ void measureTask(void* data) {
 
    // Measure ekg
    if (selections & EKG_SCHEDULED) {
-      samplingFreq = 500;
-      samplingRate = 1.0 / (3.0 * samplingFreq);
+      sampleFreq = 50;
+      samplingRate = 1.0 / (3.0 * 8929);
       double t = 0;
       for (int i = 0; i < 256; i++) {
-        ekgRawBuf[i] = (int)(10.0 * sin(2 * PI * samplingFreq * t));
+        ekgRawBuf[i] = (int)(10.0 * sin(2 * PI * sampleFreq * t) + 10);
         t = samplingRate + t;
       }
       addComputeTaskFlag++;  // just add one. repetition has been dealt with.
@@ -896,9 +900,8 @@ void computeTask(void* data) {
    (char*)&rrCorrDump, sizeof(unsigned int), COMPUTE_TASK, RESP_RAW_SUBTASK);
    sprintf((char*)(cData->rrCorrectedBufPtr[freshRespCursor]), "%d", rrCorrDump);
 
+   freshEKGCursor = (freshEKGCursor + 1) % 8;
    ekgFreqBuf[freshEKGCursor] = computeEKG();
-   freshEKGCursor = (freshEKGCursor +1)%8;
-
    
    // Done. now suicide
    addComputeTaskFlag = 0;
@@ -966,8 +969,8 @@ void warningAlarmTask(void* data) {
    *(wData->rrLowPtr) = TRUE;
   }
 
-  if (wData->ekgFreqBuf[freshEKGCursor]<35 || wData->ekgFreqBuf[freshEKGCursor]>3550){
-    *(wData->ekgLowPtr)=TRUE;
+  if (wData->ekgFreqBufPtr[freshEKGCursor] < 35 || wData->ekgFreqBufPtr[freshEKGCursor] > 3750){
+    *(wData->ekgLowPtr) = TRUE;
   }
   
 
@@ -1236,6 +1239,7 @@ void remoteComTask(void* data){
           break;    
         case 'P':                                         // Case P: STOP
           commanderMode = STOP;
+          measurementSelection = 0;
           Serial.write("P: Roger. Executing order 66\r\n");
           break;  
         case 'D':                                         // Case D: DISPLAY    
@@ -1266,17 +1270,17 @@ void remoteComTask(void* data){
         case 'W':                                         // Case W: RETURN WARNINGS
            Serial.print("W: Ele the phantom. Ele the fen.\r\n-------------------\r\n");
           Serial.print("  T = ");
-          printWarn(*(remData.tempColorPtr));
+          printWarn(*(remData->tempColorPtr));
           Serial.print("  S = ");
-          printWarn(*(remData.systoColorPtr));
+          printWarn(*(remData->systoColorPtr));
           Serial.print("  D = ");
-          printWarn(*(remData.diastoColorPtr));
+          printWarn(*(remData->diastoColorPtr));
           Serial.print("  P = ");
-          printWarn(*(remData.pulseColorPtr));
+          printWarn(*(remData->pulseColorPtr));
           Serial.print("  R = ");
-          printWarn(*(remData.respColorPtr));
+          printWarn(*(remData->respColorPtr));
           Serial.print("  E = ");
-          printWarn(*(remData.ekgColorPtr));
+          printWarn(*(remData->ekgColorPtr));
           Serial.print("\r\n-------------------------\r\n");
           break;
         default:                                          // Case 6: Default
@@ -1481,7 +1485,7 @@ void displayTask(void* data) {
           tft.setTextColor(*(dData->ekgColorPtr), BACKGROUND_COLOR);
        
        char batteryStateBuffer2[9];
-       sprintf(batteryStateBuffer2, "%d  ",dData->ekgFreqBuf[freshEKGCursor]);
+       sprintf(batteryStateBuffer2, "%d  ",dData->ekgFreqBufPtr[freshEKGCursor]);
        tft.print(batteryStateBuffer2);
        // render the ackButton
        ackButton.drawButton(false);

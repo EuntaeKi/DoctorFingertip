@@ -45,12 +45,10 @@ volatile byte PRcount = 0;
 volatile byte RRcount = 0;
 
 // Blood Pressure Variables; 
-unsigned int diasMeasure = 0;
-unsigned int sysMeasure = 0;
 unsigned int BPTimeOut = 0;
-unsigned char BPFinished = 0;
+unsigned int BPFinished = 0;
 unsigned long BPTime = 0;
-double BPcount = 80.0;
+double BPcount = 90.0;
 unsigned int BPFlag = 1;
 
 /******************************************
@@ -74,7 +72,7 @@ void setup()
   attachInterrupt(digitalPinToInterrupt(PR_PIN_IN), isrPR, RISING);
   detachInterrupt(digitalPinToInterrupt(PR_PIN_IN));
   attachInterrupt(digitalPinToInterrupt(BP_PIN_IN), isrBP, FALLING);
-  detachInterrupt(digitalPinToInterrupt(PR_PIN_IN));
+  //detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
   pinMode(PR_PIN_IN, INPUT_PULLUP); 
   pinMode(RR_PIN_IN, INPUT_PULLUP);
   pinMode(BP_PIN_IN, INPUT_PULLUP);
@@ -95,8 +93,7 @@ void setup()
 ******************************************/
 void loop()
 {
-  while(Serial.available()<2)
-  {
+  while(Serial.available()<2) {
     // Just Wait 
   }
   byte task = Serial.read();
@@ -249,7 +246,6 @@ unsigned int temperature(unsigned int data)
  ************************************/
 void isrBP() 
 {
-  BPTime = millis();
   if (BPFlag)
     BPcount = 1.1 * BPcount; 
   else
@@ -267,31 +263,56 @@ void isrBP()
 * Author: Matt, Michael, Eun Tae
 ******************************************/
 unsigned int bloodPressure(unsigned int data) {
-  BPTimeOut = millis();
-  attachInterrupt(digitalPinToInterrupt(BP_PIN_IN), isrBP, FALLING);
-  BPFlag = digitalRead(switchIn); 
+  //attachInterrupt(digitalPinToInterrupt(BP_PIN_IN), isrBP, FALLING);
   BPFinished = 0;
-  while(BPFinished == 0){ 
-    if ((signed int)(BPTime - BPTimeOut) >= 3000){
+  while(!BPFinished){
+    if(BPcount <= 150 && BPcount >= 110) {
       BPFinished = 1;
-    }
-    if(BPcount <= 150 && BPcount >= 110 && !sysMeasure) {
-      detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
-      sysMeasure = 1;
-      diasMeasure = 0;
-      data = (unsigned int)BPcount;
+      data = (unsigned int)floor(BPcount);
+      BPFlag = 0;
+    } 
+    else if (BPcount <= 80 && BPcount >= 50){
       BPFinished = 1;
-    } else if (BPcount <= 80 && BPcount >= 50 && !diasMeasure){
-      detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
-      sysMeasure = 0;
-      //diasMeasure = 1;
-      data = (unsigned int) BPcount;
-      BPcount = 80;
-      BPFinished = 1;
+      data = (unsigned int) floor(BPcount);
+      BPcount = 90.0;
     }
   }
   return data;
 }
+
+
+
+/*unsigned int bloodPressure(unsigned int data) {
+  BPTimeOut = millis();
+  BPTime = millis();
+  attachInterrupt(digitalPinToInterrupt(BP_PIN_IN), isrBP, FALLING);
+  BPFinished = 0;
+  while(!BPFinished){ 
+    if(BPcount <= 150 && BPcount >= 110) {
+      detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
+      BPFinished = 1;
+      sysMeasure = 0;
+      diasMeasure = 1;
+      data = (unsigned int)floor(BPcount);
+    } 
+    else if (BPcount <= 80 && BPcount >= 50 && diasMeasure){
+      detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
+      BPFinished = 1;
+      sysMeasure = 1;
+      diasMeasure = 0;
+      data = (unsigned int) floor(BPcount);
+      BPcount = 80;
+    }
+  //  else if ((millis() - BPTime) >= 50000) { // Button Call Check
+  //    BPFinished = 1;
+  //  } 
+//    else if (millis() - BPTimeOut >= 10000) { // Function Call Check
+//      Serial.write(252);
+//      BPFinished = 1;
+//    }
+  }
+  return data;
+}*/
 
 /*******************************
  * Function Name:        isrPR
