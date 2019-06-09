@@ -242,7 +242,7 @@ unsigned char mCount[4];
 unsigned char modeSelection = 1;  // 0 means menu   1 anounciation
 // Global Variables for Measurements
 unsigned int temperatureRawBuf[8] = {75,0,0,0,0,0,0,0};
-unsigned int bloodPressureRawBuf[16] = {80,0,0,0,0,0,0,0,80,0,0,0,0,0,0,0};
+unsigned int bloodPressureRawBuf[16] = {90,0,0,0,0,0,0,0,90,0,0,0,0,0,0,0};
 unsigned int pulseRateRawBuf[8] = {0,0,0,0,0,0,0,0};
 unsigned int respirationRateRawBuf[8] = {0,0,0,0,0,0,0,0};
 unsigned int ekgRawBuf[256];
@@ -735,6 +735,15 @@ void deleteTask(TCB* task) {
   task->prev = NULL;
 }
 
+/******************************************
+* function name: measureTask
+* function inputs: a void pointer to data
+* function outputs: None
+* function description: This function will start all the measurement 
+*                       of temperature, blood pressure, pulse rate,
+*                       respiration rate, and EKG based on the input
+* author: Matt & Eun Tae & Michael & Sabrina
+******************************************/
 void measureTask(void* data) {
    // TIMING MECH
    if (commanderMode == STOP){
@@ -776,17 +785,13 @@ void measureTask(void* data) {
      // Measure Systolic
      unsigned char oldSBPCursor  = freshSBPCursor;
      freshSBPCursor  = (freshSBPCursor  + 1) % 8;
-     Serial.println("Systolic Called");
      requestAndReceive((char*)&(mData->bpRawBufPtr[oldSBPCursor]), sizeof(unsigned int), 
      (char*)&(mData->bpRawBufPtr[freshSBPCursor]), sizeof(unsigned int), MEASURE_TASK, SYSTO_RAW_SUBTASK);
-     Serial.println("Systolic Done");
      // Measure Diastolic
      unsigned char oldDBPCursor  = freshDBPCursor;
      freshDBPCursor  = ((freshDBPCursor + 1) % 8) + 8;
-     Serial.println("Diastolic Called");
      requestAndReceive((char*)&(mData->bpRawBufPtr[oldDBPCursor]), sizeof(unsigned int), 
      (char*)&(mData->bpRawBufPtr[freshDBPCursor]), sizeof(unsigned int), MEASURE_TASK, DIASTO_RAW_SUBTASK);
-     Serial.println("Diastolic Done");
      // do the systo alarm increment
      if (mData->mCountPtr[2] > 0) {
         // alarm is expecting us to count how many times we are called.
@@ -858,7 +863,15 @@ void measureTask(void* data) {
    return; // get out
 }
 
-
+/******************************************
+* function name: computeTask
+* function inputs: a void pointer to data
+* function outputs: None
+* function description: This function will start all the computation 
+*                       of temperature, blood pressure, pulse rate,
+*                       respiration rate, and EKG based on the flag
+* author: Matt & Eun Tae & Michael & Sabrina
+******************************************/
 void computeTask(void* data) {
    // TIMING MECH
    static unsigned long timer = 0;
@@ -908,7 +921,15 @@ void computeTask(void* data) {
    return;
 }
 
-
+/******************************************
+* function name: warningAlarmTask
+* function inputs: a void pointer to data
+* function outputs: None
+* function description: This function will modify the text color and blinking rate 
+*                       of temperature, blood pressure, pulse rate,
+*                       respiration rate, and EKG based on the current value
+* author: Matt & Eun Tae & Michael & Sabrina
+******************************************/
 void warningAlarmTask(void* data) {
   // No timer is needed
   WarningAlarmData* wData = (WarningAlarmData*)data;
@@ -973,7 +994,6 @@ void warningAlarmTask(void* data) {
     *(wData->ekgLowPtr) = TRUE;
   }
   
-
   //----------------------------------------------------------------------------------------------------------------
   
   // Temperature
@@ -1164,23 +1184,31 @@ void warningAlarmTask(void* data) {
   
   if (*(wData->ekgLowPtr)==TRUE){
     *(wData->ekgColorPtr) = ORANGE;
-  }else{
+  } else {
     *(wData->ekgColorPtr) = GREEN;
   }
 
   return; // done. get out
 }
 
+/******************************************
+* function name: remoteComTask
+* function inputs: unsigned int Color
+* function outputs: None
+* function description: prints out the currrent
+*                       warning state in the Serial
+* author: Matt
+******************************************/
 void printWarn(unsigned int color){
   if (color == ORANGE){
     Serial.print(" Orange\r\n");
-  }else if (color == RED){
-        Serial.print(" Red\r\n");
-  }else{
-        Serial.print(" Green\r\n");
-
+  } else if (color == RED){
+    Serial.print(" Red\r\n");
+  } else {
+    Serial.print(" Green\r\n");
   }
 }
+
 
 /******************************************
 * function name: remoteComTask
@@ -1290,7 +1318,7 @@ void remoteComTask(void* data){
           return;
     }  
   }
-  }
+}
 
 /******************************************
 * function name: displayTask
@@ -1495,7 +1523,15 @@ void displayTask(void* data) {
    return;
 }
 
-
+/******************************************
+* function name: keypadTask
+* function inputs: a pointer to the keypadData
+* function outputs: None
+* function description: This function will constantly check
+*                       whether there has been an input from
+*                       the user
+* author: Matt
+******************************************/ 
 void keypadTask(void* data) {
   static unsigned long timer = 0;
    if (timer!=0 && (timeElapsed-timer)<KEYPAD_SCAN_INTERVAL) {  // scan every 20ms
@@ -1575,6 +1611,14 @@ void keypadTask(void* data) {
    }
 }
 
+/******************************************
+* function name: statusTask
+* function inputs: a pointer to the statusData
+* function outputs: None
+* function description: This function will constantly check
+*                       the battery
+* author: Matt
+******************************************/ 
 void statusTask(void* data) {
     // TIMING MECH
    static unsigned long timer = 0;
@@ -1583,16 +1627,23 @@ void statusTask(void* data) {
    }
    // It is our turn. get the status
    timer = timeElapsed;
-   //Serial.print("For Status--- \n");
    StatusData* statusData = (StatusData*)data;
    requestAndReceive((char*)(statusData->batteryState),sizeof(unsigned short), (char*)(statusData->batteryState),sizeof(unsigned short), STATUS_TASK , STATUS_TASK );
    if (*(statusData->batteryState) == 0) {
     *(statusData->batteryState) = FULL_BATTERY;  // Magical Recharge
    }
-   //Serial.println(" Finished\n");
    return;
 }
 
+/******************************************
+* function name: compareData
+* function inputs: unsigned int of both old and new data
+* function outputs: char, true or false
+* function description: This function will check whether
+*                       the previous value is 15% greater or 
+*                       less than the newer value.
+* author: Eun Tae
+******************************************/ 
 char compareData(unsigned int oldData, unsigned int newData) {
   char result = 0; 
   if (abs((int)(newData - oldData)) <= (0.15 * oldData)) { 
@@ -1673,7 +1724,14 @@ void toTerminal(unsigned int inputBuffer, char taskType, char subTaskType) {
   return;
 }
 
-
+/******************************************
+* function name: computeEKG
+* function inputs: None
+* function outputs: unsinged int
+* function description: This function will perform FFT on the
+*                       EKG raw data we obtained
+* author: Eun Tae
+******************************************/ 
 unsigned int computeEKG() {
   signed int imag[256];
   for (int i = 0; i < 256; i++) {

@@ -4,7 +4,7 @@
 #define DELAY_TIME 2
 #define BP_PIN_IN 3
 #define TEMP_INPUT A5
-#define switchIn 7
+#define SWITCH_IN 7
 
 // function headers
 void setup();
@@ -50,6 +50,8 @@ unsigned int BPFinished = 0;
 unsigned long BPTime = 0;
 double BPcount = 90.0;
 unsigned int BPFlag = 1;
+unsigned int sysMeasure = 1;
+unsigned int diasMeasure = 0;
 
 /******************************************
 * Function Name: setup
@@ -72,11 +74,11 @@ void setup()
   attachInterrupt(digitalPinToInterrupt(PR_PIN_IN), isrPR, RISING);
   detachInterrupt(digitalPinToInterrupt(PR_PIN_IN));
   attachInterrupt(digitalPinToInterrupt(BP_PIN_IN), isrBP, FALLING);
-  //detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
+  detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
   pinMode(PR_PIN_IN, INPUT_PULLUP); 
   pinMode(RR_PIN_IN, INPUT_PULLUP);
   pinMode(BP_PIN_IN, INPUT_PULLUP);
-  pinMode(switchIn, INPUT); 
+  pinMode(SWITCH_IN, INPUT); 
 }
 
 /******************************************
@@ -130,10 +132,10 @@ void taskDispatcher(byte task,  byte subtask){
           returnIntDump = temperature(dataIntType);
           break;
         case 2:                                         // Case 2: systolicPressRaw    
-          returnIntDump = bloodPressure(dataIntType);
+          returnIntDump = sysPressure(dataIntType);
           break;
         case 3:                                         // Case 3: diastolicCaseRaw
-          returnIntDump = bloodPressure(dataIntType);
+          returnIntDump = diasPressure(dataIntType);
           break;  
         case 4:                                         // Case 4: pulseRateRaw
           returnIntDump = pulseRate();
@@ -244,8 +246,8 @@ unsigned int temperature(unsigned int data)
  *                       Update the time isr was called
  * Author: Matt, Michael, Eun Tae
  ************************************/
-void isrBP() 
-{
+void isrBP() {
+  BPTime = millis();
   if (BPFlag)
     BPcount = 1.1 * BPcount; 
   else
@@ -253,56 +255,84 @@ void isrBP()
 }
 
 /******************************************
-* Function Name: bloodPressure
+* Function Name: sysPressure
 * Function Inputs: Integer of raw data
 * Function Outputs: Integer of processed data
 * Function Description: Increase or decrease the systolic
-*           pressure for each function call
+*           pressure for each button press
 *           based on the current value and function
 *           call count.
 * Author: Matt, Michael, Eun Tae
 ******************************************/
-unsigned int bloodPressure(unsigned int data) {
-  //attachInterrupt(digitalPinToInterrupt(BP_PIN_IN), isrBP, FALLING);
+unsigned int sysPressure(unsigned int data) {
+  BPTimeOut = millis();
+  BPTime = millis();
   BPFinished = 0;
   while(!BPFinished){
+    attachInterrupt(digitalPinToInterrupt(BP_PIN_IN), isrBP, FALLING);
     if(BPcount <= 150 && BPcount >= 110) {
-      BPFinished = 1;
       data = (unsigned int)floor(BPcount);
-      BPFlag = 0;
-    } 
-    else if (BPcount <= 80 && BPcount >= 50){
       BPFinished = 1;
-      data = (unsigned int) floor(BPcount);
-      BPcount = 90.0;
+      BPFlag = 0;
+    } else if (millis() - BPTimeOut > 10000) {
+      BPFinished = 1;
     }
+    detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
   }
   return data;
 }
 
-
-
-/*unsigned int bloodPressure(unsigned int data) {
+/******************************************
+* Function Name: diasPressure
+* Function Inputs: Integer of raw data
+* Function Outputs: Integer of processed data
+* Function Description: Increase or decrease the systolic
+*           pressure for each button press
+*           based on the current value and function
+*           call count.
+* Author: Matt, Michael, Eun Tae
+******************************************/
+unsigned int diasPressure(unsigned int data) {
   BPTimeOut = millis();
   BPTime = millis();
+  BPFinished = 0;
+  while(!BPFinished){
+    attachInterrupt(digitalPinToInterrupt(BP_PIN_IN), isrBP, FALLING);
+    if(BPcount <= 80 && BPcount >= 50) {
+      data = (unsigned int)floor(BPcount);
+      BPFinished = 1;
+      BPFlag = 1;
+    } else if (millis() - BPTimeOut > 10000) {
+      BPFinished = 1;
+    }
+    detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
+  }
+  BPcount = 90.0;
+  return data;
+}
+
+
+/*
+unsigned int bloodPressure(unsigned int data) {
   attachInterrupt(digitalPinToInterrupt(BP_PIN_IN), isrBP, FALLING);
   BPFinished = 0;
   while(!BPFinished){ 
-    if(BPcount <= 150 && BPcount >= 110) {
+    if(BPcount <= 150.0 && BPcount >= 110.0 && sysMeasure) {
       detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
       BPFinished = 1;
       sysMeasure = 0;
       diasMeasure = 1;
       data = (unsigned int)floor(BPcount);
     } 
-    else if (BPcount <= 80 && BPcount >= 50 && diasMeasure){
+    else if (BPcount <= 80.0 && BPcount >= 50.0 && diasMeasure){
       detachInterrupt(digitalPinToInterrupt(BP_PIN_IN));
       BPFinished = 1;
       sysMeasure = 1;
       diasMeasure = 0;
       data = (unsigned int) floor(BPcount);
-      BPcount = 80;
+      BPcount = 90.0;
     }
+    return BPcount;
   //  else if ((millis() - BPTime) >= 50000) { // Button Call Check
   //    BPFinished = 1;
   //  } 
@@ -312,8 +342,8 @@ unsigned int bloodPressure(unsigned int data) {
 //    }
   }
   return data;
-}*/
-
+}
+*/
 /*******************************
  * Function Name:        isrPR
  * Function Inputs:      none
